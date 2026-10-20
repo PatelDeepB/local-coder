@@ -69,3 +69,16 @@ def test_should_recover_nested_json_content_with_unescaped_quotes() -> None:
     assert tool == "write_file"
     assert args.get("file_path") == "package.json"
     assert "TaskFlow" in args.get("content", "")
+
+
+def test_should_parse_xml_attribute_write_file_format() -> None:
+    # Arrange: LLM emits <write_file path="..." content='...'>
+    raw_text = "<write_file path=\"src/App.js\" content='import React from \\'react\\';\\n\\nfunction App() { return <h1>Hello</h1>; }'}"
+
+    # Act
+    tool, args = parse_tool_call_json(raw_text)
+
+    # Assert
+    assert tool == "write_file"
+    assert args.get("file_path") == "src/App.js"
+    assert "function App()" in args.get("content", "")

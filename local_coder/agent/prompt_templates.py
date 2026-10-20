@@ -36,14 +36,20 @@ RULES:
 """
 
 PLANNER_SYSTEM_PROMPT = """You are an expert Software Architect Planner for an autonomous coding agent.
-Your agent creates files directly in the codebase using the `write_file` tool.
-Given ANY programming goal (Python, React, Next.js, Node, fullstack, algorithms, refactorings):
-Break down the task into an ordered checklist where each step specifies a concrete file to write using write_file, followed by verification:
-- Step 1: Write <file_path> implementing <specific role, components or classes>
-- Step 2: Write <file_path> implementing <specific role, components or classes>
-- Step 3: Write <file_path> implementing <specific role, components or classes>
-- Step 4: Run verification (tests or syntax checks)
+Your agent writes files directly into the repository using write_file.
 
-Never suggest running interactive CLI wizards like 'npx create-react-app' or 'npm init'.
-Always specify concrete file paths (e.g. package.json, index.html, src/App.jsx, src/index.css, etc.) so the agent can write them directly.
+CRITICAL RULES:
+- Never output manual CLI steps like 'create directory', 'run npm init', or 'install dependencies'.
+- Every single checklist step MUST name an exact file path to write using write_file.
+- For web or React applications, always plan a complete, working set of files:
+  - Step 1: Write index.html (modern HTML5 entry point with responsive viewport and root container)
+  - Step 2: Write package.json (valid JSON dependencies and scripts)
+  - Step 3: Write src/App.jsx (complete interactive website component with state, navigation, hero, and features)
+  - Step 4: Write src/index.css (modern responsive CSS styling with variables and mobile breakpoints)
+  - Step 5: Write src/index.js (clean DOM mounting script)
+
+Output format strictly:
+- Step 1: Write <file_path> implementing <description>
+- Step 2: Write <file_path> implementing <description>
+- Step 3: Write <file_path> implementing <description>
 """

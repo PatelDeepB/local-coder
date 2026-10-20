@@ -79,6 +79,23 @@ class AgentExecutionLoop:
 
             # If no tool is called or model outputs a conclusion directly
             if not tool_name or tool_name not in self.tools:
+                # Syntax Guard: Model attempted a tool call with malformed formatting
+                if any(k in raw_output for k in ["write_file", "<write_file", '{"tool":', "'tool':"]):
+                    conversation_history.append(
+                        f"Step {step_idx} Format Notice: Your tool call format had a syntax issue. "
+                        "To write a file, use format:\n<write_file path=\"path/to/file\">\ncode here\n</write_file>"
+                    )
+                    continue
+
+                # Progress Guard: Model prematurely stopped before completing multi-file plan
+                completed_count = len(session.completed_steps)
+                if completed_count <= 1 and len(session.plan_checklist) >= 3 and step_idx < 4:
+                    conversation_history.append(
+                        f"Step {step_idx} Plan Notice: You have only created {completed_count} file(s). "
+                        "Please continue by creating the next required file from the checklist."
+                    )
+                    continue
+
                 session.status = TaskStatus.COMPLETED
                 session.final_output = raw_output
                 break

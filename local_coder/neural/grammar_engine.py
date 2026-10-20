@@ -33,6 +33,17 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         content = re.sub(r"\n```$", "", content)
         return "write_file", {"file_path": path, "content": content}
 
+    # Format 1B: XML tag with content attribute <write_file path="..." content='...'>
+    m_xml_attr = re.search(r'<write_file\s+(?:path|file_path)=["\']([^"\']+)["\']\s+content=(["\'])(.*?)(?<!\\)\2[\s\}>]*$', clean, flags=re.DOTALL)
+    if not m_xml_attr:
+        m_xml_attr = re.search(r'<write_file\s+(?:path|file_path)=["\']([^"\']+)["\']\s+content=(["\'])(.*)', clean, flags=re.DOTALL)
+    if m_xml_attr:
+        path = m_xml_attr.group(1).strip()
+        raw_c = m_xml_attr.group(3).strip()
+        raw_c = re.sub(r'["\']\s*[\}>]+$', "", raw_c)
+        clean_c = raw_c.replace(r"\'", "'").replace(r'\"', '"').replace(r"\n", "\n")
+        return "write_file", {"file_path": path, "content": clean_c}
+
     # Format 2: XML tag <run_terminal> ... </run_terminal>
     m_cmd = re.search(r"<run_terminal>(.*?)(?:</run_terminal>|$)", clean, flags=re.DOTALL)
     if m_cmd:
