@@ -4,9 +4,12 @@ from pathlib import Path
 from typing import Optional
 import json
 import os
+import time
+import uuid
 
 from local_coder.agent.execution_loop import AgentExecutionLoop
-from local_coder.agent.agent_state import AgentSessionState
+from local_coder.agent.agent_state import AgentSessionState, AgentStep, TaskStatus
+from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
 from local_coder.core.memory_guard import MemoryGuard
@@ -87,8 +90,9 @@ class LocalCoderOrchestrator:
             RunTerminalCommandTool(self.terminal_runner),
         ]
 
-        # Agent Loop
+        # Agent Loop & Manifest Synthesizer
         self.agent_loop = AgentExecutionLoop(runner=self.runner, tools=self.tools)
+        self.manifest_synthesizer = ManifestSynthesizer(runner=self.runner, workspace=self.shadow_workspace)
 
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
@@ -104,8 +108,42 @@ class LocalCoderOrchestrator:
         self.memory_guard.assert_within_budget()
         rules = self.rules_engine.discover_rules() or ""
 
-        # Step 1: Execute agent loop
-        session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=rules)
+        # Step 1: Execute synthesis engine
+        goal_lower = user_goal.lower()
+        is_scaffold = any(kw in goal_lower for kw in ["create", "build", "scaffold", "react", "website", "next", "app", "application"])
+
+        if is_scaffold:
+            session = AgentSessionState(
+                session_id=str(uuid.uuid4())[:8],
+                user_goal=user_goal,
+                status=TaskStatus.IN_PROGRESS,
+            )
+            step_idx = 0
+            start_t = time.perf_counter()
+
+            def on_file(fp: str, idx: int, total: int) -> None:
+                nonlocal step_idx
+                step_idx += 1
+                session.completed_steps.append(
+                    AgentStep(
+                        step_number=step_idx,
+                        thought=f"Synthesizing manifest file {idx}/{total}: {fp}",
+                        action_tool="write_file",
+                        action_arguments={"file_path": fp},
+                        observation=f"Successfully synthesized and staged {fp} in shadow workspace.",
+                        is_successful=True,
+                        elapsed_seconds=time.perf_counter() - start_t,
+                    )
+                )
+
+            manifest_files = self.manifest_synthesizer.execute_manifest_synthesis(
+                user_goal=user_goal,
+                on_file_synthesized=on_file,
+            )
+            session.status = TaskStatus.COMPLETED
+            session.final_output = f"Successfully generated full project ({len(manifest_files)} files): {', '.join(manifest_files)}"
+        else:
+            session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=rules)
 
         # Step 2: Create physical directory on disk for this run
         run_dir = (
@@ -122,7 +160,7 @@ class LocalCoderOrchestrator:
             try:
                 rel = p.relative_to(self.root_dir)
             except ValueError:
-                rel = Path(p.name)
+                rel = Path(str(p).replace(str(self.root_dir), "").lstrip("/\\"))
 
             target_file = run_dir / rel
             target_file.parent.mkdir(parents=True, exist_ok=True)

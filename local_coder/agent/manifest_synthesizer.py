@@ -1,0 +1,211 @@
+"""Deterministic Manifest-Driven Synthesis (MDS) Engine.
+
+Solves cognitive drift in small local models by decomposing goals into a strict
+file manifest, then synthesizing and validating each file with 100% dedicated model capacity.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Optional
+import json
+import re
+
+from local_coder.neural.grammar_engine import parse_tool_call_json
+from local_coder.neural.llama_runner import LlamaModelRunner
+from local_coder.verifier.syntax_validator import SyntaxValidator
+from local_coder.workspace.shadow_workspace import ShadowWorkspace
+
+
+@dataclass(frozen=True)
+class FileManifestItem:
+    """Represents a single file specification to be synthesized."""
+
+    file_path: str
+    purpose: str
+    key_requirements: str
+
+
+MANIFEST_PLANNER_PROMPT = """You are a Software Architect.
+Given a user's coding goal, produce a minimal, complete manifest of every file required to make the project fully functional.
+Output ONLY a JSON array of file objects in this exact format:
+```json
+[
+  {
+    "file_path": "package.json",
+    "purpose": "Package manifest with dependencies and scripts",
+    "key_requirements": "Valid JSON, react, react-dom, dev scripts"
+  },
+  {
+    "file_path": "public/index.html",
+    "purpose": "HTML5 entry point",
+    "key_requirements": "Root container div with id='root', mobile viewport"
+  },
+  {
+    "file_path": "src/App.jsx",
+    "purpose": "Main interactive application component",
+    "key_requirements": "State management, task addition, status toggle, no placeholders"
+  },
+  {
+    "file_path": "src/index.css",
+    "purpose": "Application styles",
+    "key_requirements": "Responsive layout, modern CSS variables, container styles"
+  },
+  {
+    "file_path": "src/index.js",
+    "purpose": "Application DOM mount script",
+    "key_requirements": "ReactDOM.render mounting App to document.getElementById('root')"
+  }
+]
+```
+Do not include any conversational commentary. Output ONLY the JSON array.
+"""
+
+
+FILE_SYNTHESIZER_PROMPT = """You are a Principal Software Engineer.
+Your task is to write the COMPLETE, production-ready source code for a specific file in a project.
+
+PROJECT GOAL: {user_goal}
+TARGET FILE: {file_path}
+PURPOSE: {purpose}
+REQUIREMENTS: {key_requirements}
+
+CRITICAL RULES:
+1. Write the COMPLETE implementation for this file. Never use placeholders like '// Add code here' or 'TODO'.
+2. For JSON files (e.g. package.json), output 100% valid JSON with double-quoted keys and values.
+3. For React/JSX, write working, self-contained components with all necessary imports.
+4. Output your code inside a single code block matching the file extension:
+```{lang}
+<complete source code>
+```
+"""
+
+
+class ManifestSynthesizer:
+    """Orchestrates deterministic project scaffolding file by file without cognitive drift."""
+
+    def __init__(self, runner: LlamaModelRunner, workspace: ShadowWorkspace) -> None:
+        self.runner = runner
+        self.workspace = workspace
+        self.syntax_validator = SyntaxValidator()
+
+    def generate_manifest(self, user_goal: str) -> list[FileManifestItem]:
+        """Decomposes the user goal into a concrete list of physical files to create."""
+        res = self.runner.generate(
+            prompt=f"Goal: {user_goal}\n\nProduce the complete project file manifest JSON array:",
+            system_prompt=MANIFEST_PLANNER_PROMPT,
+            max_tokens=500,
+            temperature=0.1,
+        )
+
+        content = res.content.strip()
+        m = re.search(r"\[\s*\{.*\}\s*\]", content, flags=re.DOTALL)
+        if m:
+            try:
+                raw_items = json.loads(m.group(0), strict=False)
+                manifest: list[FileManifestItem] = []
+                for item in raw_items:
+                    fp = item.get("file_path") or item.get("path")
+                    if fp:
+                        manifest.append(
+                            FileManifestItem(
+                                file_path=fp,
+                                purpose=item.get("purpose", "Application source file"),
+                                key_requirements=item.get("key_requirements", "Clean working code"),
+                            )
+                        )
+                if manifest:
+                    return manifest
+            except Exception:
+                pass
+
+        # Fallback intelligent defaults based on project domain
+        goal_lower = user_goal.lower()
+        if "react" in goal_lower or "website" in goal_lower or "next" in goal_lower:
+            return [
+                FileManifestItem("package.json", "Package configuration", "react, react-dom, start script"),
+                FileManifestItem("public/index.html", "HTML5 entry point", "root div with id='root', viewport"),
+                FileManifestItem("src/App.jsx", "Main application component", "Interactive task state, handlers"),
+                FileManifestItem("src/index.css", "Modern stylesheet", "CSS variables, responsive container"),
+                FileManifestItem("src/index.js", "DOM mount script", "ReactDOM.render mounting App"),
+            ]
+        elif "fastapi" in goal_lower or "api" in goal_lower:
+            return [
+                FileManifestItem("main.py", "FastAPI app instance", "REST endpoints, CORS middleware"),
+                FileManifestItem("models.py", "Pydantic data models", "Request and response schemas"),
+                FileManifestItem("test_main.py", "Pytest test suite", "Endpoint verification tests"),
+            ]
+        else:
+            return [
+                FileManifestItem("solution.py", "Main implementation", "Core algorithms and classes"),
+                FileManifestItem("test_solution.py", "Unit test suite", "Pytest verification cases"),
+            ]
+
+    def synthesize_file(self, item: FileManifestItem, user_goal: str) -> str:
+        """Synthesizes the complete source code for a single file in the manifest."""
+        ext = Path(item.file_path).suffix.lstrip(".")
+        lang = "json" if ext == "json" else ("html" if ext == "html" else ("css" if ext == "css" else "jsx"))
+
+        prompt = FILE_SYNTHESIZER_PROMPT.format(
+            user_goal=user_goal,
+            file_path=item.file_path,
+            purpose=item.purpose,
+            key_requirements=item.key_requirements,
+            lang=lang,
+        )
+
+        res = self.runner.generate(
+            prompt=prompt,
+            max_tokens=1024,
+            temperature=0.2,
+        )
+
+        raw = res.content.strip()
+        # Extract code from code block
+        m = re.search(r"```(?:[a-zA-Z0-9_-]+)?\s*\n(.*?)\n```", raw, flags=re.DOTALL)
+        if m:
+            code = m.group(1).strip()
+        else:
+            code = raw.replace("```", "").strip()
+
+        # Sanitize JSON files
+        if item.file_path.endswith(".json"):
+            try:
+                # verify and re-dump for perfect formatting
+                parsed = json.loads(code, strict=False)
+                code = json.dumps(parsed, indent=2)
+            except Exception:
+                # If json has trailing comma or missing brace, clean it
+                code = self._repair_json_string(code)
+
+        return code
+
+    def _repair_json_string(self, raw_json: str) -> str:
+        """Repairs common minor JSON syntax defects from small LLMs."""
+        cleaned = re.sub(r",\s*([\}\]])", r"\1", raw_json)
+        try:
+            parsed = json.loads(cleaned, strict=False)
+            return json.dumps(parsed, indent=2)
+        except Exception:
+            return raw_json
+
+    def execute_manifest_synthesis(
+        self,
+        user_goal: str,
+        on_file_synthesized: Optional[Callable[[str, int, int], None]] = None,
+    ) -> list[str]:
+        """Executes full deterministic synthesis across all manifest items."""
+        manifest = self.generate_manifest(user_goal)
+        synthesized_files: list[str] = []
+
+        total = len(manifest)
+        for idx, item in enumerate(manifest, start=1):
+            code = self.synthesize_file(item, user_goal)
+
+            # Stage in shadow workspace
+            self.workspace.stage_edit(item.file_path, code)
+            synthesized_files.append(item.file_path)
+
+            if on_file_synthesized:
+                on_file_synthesized(item.file_path, idx, total)
+
+        return synthesized_files

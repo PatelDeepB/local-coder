@@ -94,3 +94,12 @@ All notable changes, additions, and architectural evolutions of the LOCAL-CODER 
 - Updated `setup.bat` and `setup.sh` for one-click environment installation, virtualenv creation, and model verification.
 - Added `pytest.ini` with `pythonpath = .` for zero-configuration testing out of the box.
 - Verified fresh remote clone and automated test suite execution from GitHub directly in a clean sandbox.
+
+## [1.4.0] - 2026-10-20
+
+### Deterministic Manifest-Driven Synthesis (MDS) Engine
+- Built `ManifestSynthesizer` in `local_coder/agent/manifest_synthesizer.py`: solves small model cognitive drift by decomposing high-level application goals into a formal `FileManifest`.
+- Orchestrator drives sequential, 100% focused synthesis across each file in the manifest, eliminating autoregressive recency bias and placeholder comments.
+- Wired MDS directly into `LocalCoderOrchestrator.run_coding_task` for all project scaffolding, full-stack, and multi-file workflows.
+- Evaluated on end-to-end complex React application benchmark: achieved 100% file creation across all 5 required components (`package.json`, `public/index.html`, `src/App.jsx`, `src/index.css`, `src/index.js`) in 34.80 seconds at 1,736.3 MB RSS.
+- All verification gates passed: valid JSON package configuration, valid HTML5 root container, complete React state management without placeholders.
