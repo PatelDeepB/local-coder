@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Large Neural Models (Exceeds GitHub 100MB limit, auto-downloaded via setup.bat / download_model.py)
+models/
+*.gguf
+*.bin
+
+# Temporary & Workspace Runs
+workspace_runs/
+.localcoder/
+*.hkg
+*.db-shm
+*.db-wal
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+tests/test_results.xml
+tests/benchmark_results.json
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
