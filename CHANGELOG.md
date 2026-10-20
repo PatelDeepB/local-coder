@@ -84,3 +84,13 @@ All notable changes, additions, and architectural evolutions of the LOCAL-CODER 
 - Added automated JSON syntax verification inside `WriteFileTool` to guarantee valid configurations before disk staging.
 - Executed real-world complex benchmark: successfully scaffolded a multi-file React application (`TaskFlow`) with `package.json`, `public/index.html`, and `src/App.jsx` in `workspace_runs/complex_react_app/` in 42.07 seconds at 1742.8 MB RSS.
 - Added comprehensive unit test suite in `tests/test_grammar_engine.py` verifying all tool calling formats (41 total tests passing).
+
+## [1.3.1] - 2026-10-20
+
+### Open-Source Release & Automated Setup
+- Published complete, standalone repository to GitHub at `https://github.com/PatelDeepB/local-coder`.
+- Configured `.gitignore` keeping the repository lightweight (~220 KB clone) while auto-managing the 1.04 GB model weights.
+- Implemented `scripts/download_model.py` with visual progress bar for automatic Hugging Face model downloads.
+- Updated `setup.bat` and `setup.sh` for one-click environment installation, virtualenv creation, and model verification.
+- Added `pytest.ini` with `pythonpath = .` for zero-configuration testing out of the box.
+- Verified fresh remote clone and automated test suite execution from GitHub directly in a clean sandbox.
