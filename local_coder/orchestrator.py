@@ -18,6 +18,7 @@ from local_coder.knowledge.mmap_symbol_graph import MmapSymbolGraph
 from local_coder.memory.episodic_ring import EpisodicRollingHashRing
 from local_coder.neural.contract_planner import ContractPlanner
 from local_coder.neural.llama_runner import LlamaModelRunner
+from local_coder.neural.model_router import ModelRouter, ModelProvider
 from local_coder.neural.slot_coder import SlotCoder
 from local_coder.tools.file_tools import (
     FileOutlineTool,
@@ -45,7 +46,7 @@ class LocalCoderOrchestrator:
     def __init__(
         self,
         workspace_root: Optional[str | Path] = None,
-        model_runner: Optional[LlamaModelRunner] = None,
+        model_runner: Optional[LlamaModelRunner | ModelRouter] = None,
     ) -> None:
         self.root_dir = Path(workspace_root or os.getcwd()).resolve()
         self.memory_guard = MemoryGuard()
@@ -66,7 +67,7 @@ class LocalCoderOrchestrator:
         self.tree_indexer = TreeIndexer(self.hdc_index, self.symbol_graph)
 
         # Neural Engine
-        self.runner = model_runner or LlamaModelRunner(memory_guard=self.memory_guard)
+        self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
         self.contract_planner = ContractPlanner(self.runner)
         self.slot_coder = SlotCoder(self.runner)
 

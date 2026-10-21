@@ -1,0 +1,113 @@
+{
+  "name": "local-coder-vscode",
+  "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
+  "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
+  "version": "1.0.0",
+  "publisher": "pateldeep",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "local-coder.inlineEdit",
+        "title": "Local Coder: Inline Edit (Ctrl+K)"
+      },
+      {
+        "command": "local-coder.openComposer",
+        "title": "Local Coder: Open Composer Sidebar"
+      },
+      {
+        "command": "local-coder.fixDiagnostics",
+        "title": "Local Coder: Auto-Fix Diagnostics with Compiler Gate"
+      },
+      {
+        "command": "local-coder.acceptDiff",
+        "title": "Local Coder: Accept Inline Diff"
+      },
+      {
+        "command": "local-coder.rejectDiff",
+        "title": "Local Coder: Reject Inline Diff"
+      },
+      {
+        "command": "local-coder.switchProvider",
+        "title": "Local Coder: Switch Model Provider"
+      },
+      {
+        "command": "local-coder.commitChanges",
+        "title": "Local Coder: Commit Staged Edits"
+      },
+      {
+        "command": "local-coder.rollbackChanges",
+        "title": "Local Coder: Rollback Staged Edits"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "local-coder.inlineEdit",
+        "key": "ctrl+k",
+        "mac": "cmd+k",
+        "when": "editorTextFocus && !localCoderDiffActive"
+      },
+      {
+        "command": "local-coder.openComposer",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      },
+      {
+        "command": "local-coder.acceptDiff",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "localCoderDiffActive"
+      },
+      {
+        "command": "local-coder.rejectDiff",
+        "key": "escape",
+        "when": "localCoderDiffActive"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "local-coder-sidebar",
+          "title": "Local Coder",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "local-coder-sidebar": [
+        {
+          "type": "webview",
+          "id": "local-coder.chatView",
+          "name": "Composer & Agent"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "LOCAL-CODER",
+      "properties": {
+        "localCoder.apiUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "Base URL of LOCAL-CODER FastAPI server daemon."
+        },
+        "localCoder.provider": {
+          "type": "string",
+          "enum": ["local", "ollama", "openai", "hybrid"],
+          "default": "local",
+          "description": "Active intelligence backend tier."
+        }
+      }
+    }
+  }
+}

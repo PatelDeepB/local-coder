@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
 import json
+import re
 import time
 import uuid
 
@@ -54,6 +55,27 @@ class TaskRequest(BaseModel):
 
 class TerminalRequest(BaseModel):
     command: str
+
+
+class InlineEditRequest(BaseModel):
+    file_path: str
+    selected_code: str
+    instruction: str
+    prefix_context: str = ""
+    suffix_context: str = ""
+
+
+class DiagnosticsHealRequest(BaseModel):
+    file_path: str
+    content: str
+    diagnostics: list[dict] = []
+
+
+class ProviderChangeRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 orchestrator_instance: Optional[LocalCoderOrchestrator] = None
@@ -205,6 +227,93 @@ async def run_terminal(req: TerminalRequest) -> dict[str, Any]:
         "stderr": res.stderr,
         "elapsed_seconds": res.elapsed_seconds,
     }
+
+
+@app.post("/api/v1/inline-edit")
+async def inline_edit(req: InlineEditRequest) -> dict[str, Any]:
+    """Provides fast scoped inline code replacement for VS Code Ctrl+K."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    start = time.perf_counter()
+    prompt = (
+        f"File: {req.file_path}\n"
+        f"Prefix Context:\n{req.prefix_context[-300:]}\n"
+        f"Selected Code to Modify:\n```\n{req.selected_code}\n```\n"
+        f"Suffix Context:\n{req.suffix_context[:300]}\n"
+        f"Edit Instruction: {req.instruction}\n\n"
+        f"Output ONLY the replacement code for the selected block inside a code fence."
+    )
+    res = orchestrator_instance.runner.generate(prompt=prompt, max_tokens=1024, temperature=0.1)
+    raw = res.content.strip()
+    m = re.search(r"```(?:[a-zA-Z0-9_-]+)?\s*\n(.*?)\n```", raw, flags=re.DOTALL)
+    replacement = m.group(1) if m else raw.replace("```", "").strip()
+
+    patcher = PrecisionPatcher()
+    diff = patcher.generate_unified_diff(req.selected_code, replacement, file_path=req.file_path)
+    elapsed = time.perf_counter() - start
+
+    return {
+        "file_path": req.file_path,
+        "replacement_code": replacement,
+        "diff": diff,
+        "elapsed_seconds": elapsed,
+    }
+
+
+@app.post("/api/v1/diagnostics/heal")
+async def heal_diagnostics(req: DiagnosticsHealRequest) -> dict[str, Any]:
+    """Ingests LSP or compiler diagnostics and attempts targeted self-repair."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    from local_coder.agent.compiler_gate import CompilerGate
+    gate = CompilerGate()
+    diag_report = gate.ingest_lsp_diagnostics(req.diagnostics)
+    if diag_report.is_valid:
+        diag_report = gate.check_file_content(req.file_path, req.content)
+
+    if diag_report.is_valid:
+        return {"is_repaired": False, "repaired_code": req.content, "message": "No errors found."}
+
+    repair_prompt = gate.format_repair_prompt(diag_report, req.content, req.file_path)
+    res = orchestrator_instance.runner.generate(prompt=repair_prompt, max_tokens=1500, temperature=0.1)
+    raw = res.content.strip()
+    m = re.search(r"```(?:[a-zA-Z0-9_-]+)?\s*\n(.*?)\n```", raw, flags=re.DOTALL)
+    repaired = m.group(1) if m else raw.replace("```", "").strip()
+
+    check_res = gate.check_file_content(req.file_path, repaired)
+    return {
+        "is_repaired": check_res.is_valid,
+        "repaired_code": repaired,
+        "remaining_errors": [e.message for e in check_res.errors],
+    }
+
+
+@app.post("/api/v1/provider/set")
+async def set_model_provider(req: ProviderChangeRequest) -> dict[str, Any]:
+    """Switches active model provider dynamically."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    from local_coder.neural.model_router import ModelRouter, ModelProvider
+    if isinstance(orchestrator_instance.runner, ModelRouter):
+        orchestrator_instance.runner.provider = ModelProvider(req.provider.lower())
+        if req.model:
+            if req.provider == "ollama":
+                orchestrator_instance.runner.ollama_model = req.model
+            elif req.provider == "openai":
+                orchestrator_instance.runner.openai_model = req.model
+        if req.base_url:
+            if req.provider == "ollama":
+                orchestrator_instance.runner.ollama_base_url = req.base_url.rstrip("/")
+            elif req.provider == "openai":
+                orchestrator_instance.runner.openai_base_url = req.base_url.rstrip("/")
+        if req.api_key:
+            orchestrator_instance.runner.openai_api_key = req.api_key
+        return {"status": "ok", "provider": orchestrator_instance.runner.provider.value}
+
+    return {"status": "error", "message": "Runner is not a ModelRouter instance"}
 
 
 @app.get("/v1/models")

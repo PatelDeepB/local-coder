@@ -29,6 +29,13 @@ class LocalCoderConfig:
     terminal_timeout_seconds: float = 30.0
     enable_flash_attention: bool = False
     kv_cache_quantization_type: Optional[int] = None
+    # Provider Settings (local, ollama, openai, hybrid)
+    model_provider: str = os.getenv("LOCAL_CODER_PROVIDER", "local")
+    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY", os.getenv("DEEPSEEK_API_KEY", None))
+    openai_model: str = os.getenv("OPENAI_MODEL", "deepseek-chat")
 
 
 CONFIG = LocalCoderConfig()

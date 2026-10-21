@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 import json
 import re
 
+from local_coder.agent.compiler_gate import CompilerGate
 from local_coder.neural.grammar_engine import parse_tool_call_json
 from local_coder.neural.llama_runner import LlamaModelRunner
 from local_coder.verifier.syntax_validator import SyntaxValidator
@@ -83,10 +84,11 @@ CRITICAL RULES:
 class ManifestSynthesizer:
     """Orchestrates deterministic project scaffolding file by file without cognitive drift."""
 
-    def __init__(self, runner: LlamaModelRunner, workspace: ShadowWorkspace) -> None:
+    def __init__(self, runner: Any, workspace: ShadowWorkspace) -> None:
         self.runner = runner
         self.workspace = workspace
         self.syntax_validator = SyntaxValidator()
+        self.compiler_gate = CompilerGate()
 
     def generate_manifest(self, user_goal: str) -> list[FileManifestItem]:
         """Decomposes the user goal into a concrete list of physical files to create."""
@@ -176,6 +178,17 @@ class ManifestSynthesizer:
             except Exception:
                 # If json has trailing comma or missing brace, clean it
                 code = self._repair_json_string(code)
+
+        # Active compiler gate check and self-repair
+        diag = self.compiler_gate.check_file_content(item.file_path, code)
+        if not diag.is_valid and diag.errors:
+            repair_prompt = self.compiler_gate.format_repair_prompt(diag, code, item.file_path)
+            repair_res = self.runner.generate(prompt=repair_prompt, max_tokens=1024, temperature=0.1)
+            repaired_raw = repair_res.content.strip()
+            rm = re.search(r"```(?:[a-zA-Z0-9_-]+)?\s*\n(.*?)\n```", repaired_raw, flags=re.DOTALL)
+            repaired_code = rm.group(1).strip() if rm else repaired_raw.replace("```", "").strip()
+            if self.compiler_gate.check_file_content(item.file_path, repaired_code).is_valid:
+                code = repaired_code
 
         return code
 

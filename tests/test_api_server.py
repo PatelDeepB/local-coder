@@ -101,3 +101,56 @@ def test_should_return_api_status_and_diff() -> None:
     assert diff_resp.status_code == 200
     assert diff_resp.json() == {"diff": ""}
 
+
+def test_should_process_inline_edit_request() -> None:
+    # Arrange
+    mock_orch = MagicMock()
+    mock_orch.runner.generate.return_value = MagicMock(content="```python\ndef greet(): return 'hi'\n```")
+    api_module.orchestrator_instance = mock_orch
+
+    client = TestClient(app)
+    payload = {
+        "file_path": "test.py",
+        "selected_code": "def greet(): pass",
+        "instruction": "return hi",
+    }
+
+    # Act
+    resp = client.post("/api/v1/inline-edit", json=payload)
+
+    # Assert
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "replacement_code" in data
+    assert "def greet(): return 'hi'" in data["replacement_code"]
+    assert "diff" in data
+
+
+def test_should_heal_diagnostics() -> None:
+    # Arrange
+    mock_orch = MagicMock()
+    mock_orch.runner.generate.return_value = MagicMock(
+        content="```python\ndef valid():\n    return 42\n```"
+    )
+    api_module.orchestrator_instance = mock_orch
+
+    client = TestClient(app)
+    payload = {
+        "file_path": "valid.py",
+        "content": "def broken(): return",
+        "diagnostics": [
+            {"file": "valid.py", "line": 1, "column": 1, "message": "invalid syntax", "severity": "error"}
+        ],
+    }
+
+    # Act
+    resp = client.post("/api/v1/diagnostics/heal", json=payload)
+
+    # Assert
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "is_repaired" in data
+    assert data["is_repaired"] is True
+    assert "return 42" in data["repaired_code"]
+
+
