@@ -231,8 +231,7 @@ function activate(context) {
  * Executes inline edit request and renders diff overlay.
  */
 async function executeInlineEdit(editor, selection, selectedText, instruction) {
-    const config = vscode.workspace.getConfiguration('localCoder');
-    const baseUrl = config.get('apiUrl') || 'http://127.0.0.1:8000';
+    const baseUrl = await getActiveBaseUrl();
 
     const document = editor.document;
     const startLine = selection.start.line;
@@ -297,6 +296,25 @@ function clearActiveDiff(editor) {
 }
 
 /**
+ * Resolves active backend URL with automatic fallback to port 8080 if 8000 is occupied.
+ */
+async function getActiveBaseUrl() {
+    const config = vscode.workspace.getConfiguration('localCoder');
+    const configured = config.get('apiUrl') || 'http://127.0.0.1:8000';
+    try {
+        await sendGetRequest(`${configured}/health`);
+        return configured;
+    } catch {
+        try {
+            await sendGetRequest('http://127.0.0.1:8080/health');
+            return 'http://127.0.0.1:8080';
+        } catch {
+            return configured;
+        }
+    }
+}
+
+/**
  * Queries server telemetry and updates status bar.
  */
 async function checkBackendHealth() {
@@ -304,16 +322,16 @@ async function checkBackendHealth() {
         return;
     }
     const config = vscode.workspace.getConfiguration('localCoder');
-    const baseUrl = config.get('apiUrl') || 'http://127.0.0.1:8000';
+    const activeUrl = await getActiveBaseUrl();
     try {
-        const statusData = await sendGetRequest(`${baseUrl}/api/v1/status`);
+        const statusData = await sendGetRequest(`${activeUrl}/api/v1/status`);
         const rss = Math.round(statusData.rss_mb || 0);
         const provider = config.get('provider') || 'local';
         statusBarItem.text = `$(sparkle) Local Coder: ${rss}MB [${provider}]`;
-        statusBarItem.tooltip = `Status: ${statusData.status} | Staged Files: ${statusData.staged_files.length} | Click to switch provider`;
+        statusBarItem.tooltip = `Status: ${statusData.status} | URL: ${activeUrl} | Staged: ${statusData.staged_files.length} | Click to switch`;
     } catch {
         statusBarItem.text = '$(circle-slash) Local Coder: Offline';
-        statusBarItem.tooltip = 'FastAPI server daemon is not running on 127.0.0.1:8000';
+        statusBarItem.tooltip = 'FastAPI server daemon is not running on 127.0.0.1:8000 or 8080';
     }
 }
 
@@ -334,8 +352,7 @@ class LocalCoderComposerViewProvider {
         webviewView.webview.html = this._getHtmlForWebview();
 
         webviewView.webview.onDidReceiveMessage(async (message) => {
-            const config = vscode.workspace.getConfiguration('localCoder');
-            const baseUrl = config.get('apiUrl') || 'http://127.0.0.1:8000';
+            const baseUrl = await getActiveBaseUrl();
 
             if (message.command === 'submitTask') {
                 try {
