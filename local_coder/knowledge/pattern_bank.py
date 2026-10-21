@@ -167,7 +167,7 @@ class ItemResponse(ItemBase):
             file_path="main.py",
             purpose="FastAPI application router and service endpoints",
             boilerplate_skeleton="""from fastapi import FastAPI, HTTPException, status
-from typing import list
+from typing import List, Optional
 from schemas import ItemCreate, ItemResponse
 
 app = FastAPI(title="Production Service API", version="1.0.0")
@@ -179,7 +179,7 @@ _id_counter = 0
 def health_check() -> dict[str, str]:
     return {"status": "healthy", "service": "api"}
 
-@app.get("/api/v1/items", response_model=list[ItemResponse])
+@app.get("/api/v1/items", response_model=List[ItemResponse])
 def list_items() -> list[dict]:
     return list(_db.values())
 
@@ -395,11 +395,120 @@ class TaskTestCase(TestCase):
 )
 
 
+CLI_DATA_ANALYSIS_PATTERN = ArchitecturalPattern(
+    name="CLI Data Analysis Suite",
+    domain="data_tools",
+    keywords=("cli", "data analysis", "analyzer", "statistics", "csv", "summary"),
+    description="High-performance numerical analysis CLI with pure-logic algorithms and pytest coverage.",
+    files=(
+        PatternFileBlueprint(
+            file_path="requirements.txt",
+            purpose="Tool dependencies",
+            boilerplate_skeleton="pytest>=7.0.0\n",
+            key_requirements=("pytest",),
+        ),
+        PatternFileBlueprint(
+            file_path="analyzer.py",
+            purpose="Core statistical calculation algorithms",
+            boilerplate_skeleton="""import math
+from typing import Dict, List, Optional
+
+def compute_summary_statistics(numbers: List[float]) -> Dict[str, float]:
+    \"\"\"Calculates count, mean, median, standard deviation, min, and max.\"\"\"
+    if not numbers:
+        return {"count": 0.0, "mean": 0.0, "median": 0.0, "std_dev": 0.0, "min": 0.0, "max": 0.0}
+    
+    n = len(numbers)
+    s = sum(numbers)
+    mean = s / n
+    sorted_vals = sorted(numbers)
+    
+    if n % 2 == 1:
+        median = sorted_vals[n // 2]
+    else:
+        median = (sorted_vals[n // 2 - 1] + sorted_vals[n // 2]) / 2.0
+        
+    variance = sum((x - mean) ** 2 for x in numbers) / n if n > 0 else 0.0
+    std_dev = math.sqrt(variance)
+    
+    return {
+        "count": float(n),
+        "mean": mean,
+        "median": median,
+        "std_dev": std_dev,
+        "min": sorted_vals[0],
+        "max": sorted_vals[-1],
+    }
+
+def detect_anomalies(numbers: List[float], threshold_std: float = 2.0) -> List[float]:
+    \"\"\"Identifies values further than threshold standard deviations from mean.\"\"\"
+    if len(numbers) < 3:
+        return []
+    stats = compute_summary_statistics(numbers)
+    mean, std = stats["mean"], stats["std_dev"]
+    if std == 0.0:
+        return []
+    return [x for x in numbers if abs(x - mean) > threshold_std * std]""",
+            key_requirements=("compute_summary_statistics", "detect_anomalies", "pure math calculations"),
+        ),
+        PatternFileBlueprint(
+            file_path="cli.py",
+            purpose="Command-line interface entry point",
+            boilerplate_skeleton="""import argparse
+import sys
+from analyzer import compute_summary_statistics, detect_anomalies
+
+def main(args: list = None) -> int:
+    parser = argparse.ArgumentParser(description="High-Performance Data Analyzer")
+    parser.add_argument("numbers", nargs="+", type=float, help="Series of numbers to analyze")
+    parser.add_argument("--anomalies", action="store_true", help="Flag anomalous values")
+    
+    parsed = parser.parse_args(args)
+    stats = compute_summary_statistics(parsed.numbers)
+    
+    print("=== SUMMARY STATISTICS ===")
+    for k, v in stats.items():
+        print(f"  {k}: {v:.2f}")
+        
+    if parsed.anomalies:
+        anomalies = detect_anomalies(parsed.numbers)
+        print(f"\\nDetected Anomalies (threshold=2.0): {anomalies}")
+        
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())""",
+            key_requirements=("argparse", "calls analyzer", "returns exit code"),
+        ),
+        PatternFileBlueprint(
+            file_path="test_analyzer.py",
+            purpose="Unit test suite for analyzer",
+            boilerplate_skeleton="""from analyzer import compute_summary_statistics, detect_anomalies
+
+def test_should_compute_exact_statistics_for_odd_series():
+    data = [1.0, 2.0, 3.0, 4.0, 5.0]
+    stats = compute_summary_statistics(data)
+    assert stats["count"] == 5.0
+    assert stats["mean"] == 3.0
+    assert stats["median"] == 3.0
+    assert stats["min"] == 1.0
+    assert stats["max"] == 5.0
+
+def test_should_detect_outliers():
+    data = [10.0, 10.1, 9.9, 10.0, 10.2, 100.0]
+    anomalies = detect_anomalies(data)
+    assert 100.0 in anomalies""",
+            key_requirements=("test odd series", "test detect outliers"),
+        ),
+    ),
+)
+
+
 class CleanPatternBank:
     """Provides instant architectural skeletons and clean-code guidance."""
 
     def __init__(self) -> None:
-        self._patterns = [REACT_DASHBOARD_PATTERN, FASTAPI_REST_PATTERN, DJANGO_CRUD_PATTERN]
+        self._patterns = [REACT_DASHBOARD_PATTERN, FASTAPI_REST_PATTERN, DJANGO_CRUD_PATTERN, CLI_DATA_ANALYSIS_PATTERN]
 
     def match_pattern(self, goal: str) -> Optional[ArchitecturalPattern]:
         """Finds matching architectural pattern for user goal."""

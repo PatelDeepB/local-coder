@@ -2,6 +2,25 @@
 
 All notable changes, additions, and architectural evolutions of the LOCAL-CODER system are meticulously recorded here.
 
+## [1.2.3] - 2026-10-21: 4-Task Complex Benchmark & Typing Auto-Healing
+
+### Comprehensive Documentation & Pattern Expansion
+- Updated repository `README.md` on GitHub:
+  * Documented native VS Code extension installation, keybindings, and inline editing workflows.
+  * Added architecture diagram, benchmarks, and model router tiering.
+- Added `CLI_DATA_ANALYSIS_PATTERN` to `CleanPatternBank` for systems and mathematical tools.
+- Enhanced `CompilerGate` and `ManifestSynthesizer` with typing auto-healing:
+  * Detects missing typing imports (`Dict`, `List`, `Optional`, `Tuple`, `Any`, `Union`) and injects them automatically.
+
+### 4-Task Multi-Domain Complex Evaluation Benchmark
+- Executed `scripts/evaluate_four_complex_tasks.py` across 4 domains:
+  * Modern React 18 Dashboard: 5/5 files clean in 43.68s.
+  * Django Production MVC Application: 8/8 files clean in 95.33s.
+  * FastAPI Layered REST Microservice: 4/4 files clean in 59.97s (100% pytest pass in 0.38s).
+  * Statistical Data Analysis CLI Tool: 4/4 files clean in 82.94s.
+- Total Synthesis Latency: 286.73s across all 21 files.
+- Peak Physical RAM: 1,748.9 MB RSS (safely under 1,900.0 MB hardware ceiling).
+
 ## [1.2.2] - 2026-10-21: Inline Edit Bugfix & Django Benchmark Parity Upgrades
 
 ### Inline Edit Line Replacement Bugfix

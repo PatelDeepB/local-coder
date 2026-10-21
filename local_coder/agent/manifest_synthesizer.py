@@ -179,6 +179,13 @@ class ManifestSynthesizer:
                 code = code.replace("from django.shortcuts import", "from django.shortcuts import redirect,")
             if "TaskForm(" in code and "from tasks.forms import" not in code and "class TaskForm" not in code:
                 code = "from tasks.forms import TaskForm\n" + code
+            # Auto-heal missing typing imports
+            for sym in ("Dict", "List", "Optional", "Tuple", "Any", "Union"):
+                if (f"{sym}[" in code or f": {sym}" in code or f"-> {sym}" in code) and f"import {sym}" not in code and f", {sym}" not in code:
+                    if "from typing import" in code:
+                        code = code.replace("from typing import", f"from typing import {sym},")
+                    else:
+                        code = f"from typing import {sym}\n" + code
 
         # Sanitize JSON files
         if item.file_path.endswith(".json"):

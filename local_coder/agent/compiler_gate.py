@@ -127,6 +127,16 @@ class CompilerGate:
                 message="Missing import: 'from tasks.forms import TaskForm'",
                 source="import_gate",
             ))
+
+        # Check commonly missing typing symbols
+        for sym in ("Dict", "List", "Optional", "Tuple", "Any", "Union"):
+            if (f"{sym}[" in content or f": {sym}" in content or f"-> {sym}" in content) and sym not in imported_names:
+                errors.append(DiagnosticItem(
+                    file_path=file_path, line=1, column=1,
+                    message=f"Missing import: 'from typing import {sym}'",
+                    source="import_gate",
+                ))
+
         return errors
 
     def _check_json(self, file_path: str, content: str) -> DiagnosticReport:
