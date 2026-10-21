@@ -11,6 +11,7 @@ import json
 import re
 
 from local_coder.agent.compiler_gate import CompilerGate
+from local_coder.knowledge.pattern_bank import CleanPatternBank
 from local_coder.neural.grammar_engine import parse_tool_call_json
 from local_coder.neural.llama_runner import LlamaModelRunner
 from local_coder.verifier.syntax_validator import SyntaxValidator
@@ -89,6 +90,7 @@ class ManifestSynthesizer:
         self.workspace = workspace
         self.syntax_validator = SyntaxValidator()
         self.compiler_gate = CompilerGate()
+        self.pattern_bank = CleanPatternBank()
 
     def generate_manifest(self, user_goal: str) -> list[FileManifestItem]:
         """Decomposes the user goal into a concrete list of physical files to create."""
@@ -120,27 +122,22 @@ class ManifestSynthesizer:
             except Exception:
                 pass
 
-        # Fallback intelligent defaults based on project domain
-        goal_lower = user_goal.lower()
-        if "react" in goal_lower or "website" in goal_lower or "next" in goal_lower:
+        # Fallback to verified clean architectural patterns
+        matched_pat = self.pattern_bank.match_pattern(user_goal)
+        if matched_pat:
             return [
-                FileManifestItem("package.json", "Package configuration", "react, react-dom, start script"),
-                FileManifestItem("public/index.html", "HTML5 entry point", "root div with id='root', viewport"),
-                FileManifestItem("src/App.jsx", "Main application component", "Interactive task state, handlers"),
-                FileManifestItem("src/index.css", "Modern stylesheet", "CSS variables, responsive container"),
-                FileManifestItem("src/index.js", "DOM mount script", "ReactDOM.render mounting App"),
+                FileManifestItem(
+                    file_path=fb.file_path,
+                    purpose=fb.purpose,
+                    key_requirements=", ".join(fb.key_requirements),
+                )
+                for fb in matched_pat.files
             ]
-        elif "fastapi" in goal_lower or "api" in goal_lower:
-            return [
-                FileManifestItem("main.py", "FastAPI app instance", "REST endpoints, CORS middleware"),
-                FileManifestItem("models.py", "Pydantic data models", "Request and response schemas"),
-                FileManifestItem("test_main.py", "Pytest test suite", "Endpoint verification tests"),
-            ]
-        else:
-            return [
-                FileManifestItem("solution.py", "Main implementation", "Core algorithms and classes"),
-                FileManifestItem("test_solution.py", "Unit test suite", "Pytest verification cases"),
-            ]
+
+        return [
+            FileManifestItem("solution.py", "Main implementation", "Core algorithms and classes"),
+            FileManifestItem("test_solution.py", "Unit test suite", "Pytest verification cases"),
+        ]
 
     def synthesize_file(self, item: FileManifestItem, user_goal: str) -> str:
         """Synthesizes the complete source code for a single file in the manifest."""
@@ -154,6 +151,10 @@ class ManifestSynthesizer:
             key_requirements=item.key_requirements,
             lang=lang,
         )
+
+        guidance = self.pattern_bank.build_guidance_prompt(user_goal, item.file_path)
+        if guidance:
+            prompt = f"{guidance}\n\n{prompt}"
 
         res = self.runner.generate(
             prompt=prompt,

@@ -2,8 +2,12 @@
   "name": "local-coder-vscode",
   "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
   "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "pateldeep",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PatelDeepB/local-coder.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -13,42 +17,59 @@
     "Machine Learning"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:local-coder.inlineEdit",
+    "onCommand:local-coder.openComposer",
+    "onCommand:local-coder.fixDiagnostics",
+    "onCommand:local-coder.acceptDiff",
+    "onCommand:local-coder.rejectDiff",
+    "onCommand:local-coder.switchProvider",
+    "onCommand:local-coder.commitChanges",
+    "onCommand:local-coder.rollbackChanges",
+    "onView:local-coder.chatView"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "local-coder.inlineEdit",
-        "title": "Local Coder: Inline Edit (Ctrl+K)"
+        "category": "Local Coder",
+        "title": "Inline Edit (Ctrl+K / Ctrl+I)"
       },
       {
         "command": "local-coder.openComposer",
-        "title": "Local Coder: Open Composer Sidebar"
+        "category": "Local Coder",
+        "title": "Open Composer Sidebar (Ctrl+Shift+L)"
       },
       {
         "command": "local-coder.fixDiagnostics",
-        "title": "Local Coder: Auto-Fix Diagnostics with Compiler Gate"
+        "category": "Local Coder",
+        "title": "Auto-Fix Diagnostics with Compiler Gate"
       },
       {
         "command": "local-coder.acceptDiff",
-        "title": "Local Coder: Accept Inline Diff"
+        "category": "Local Coder",
+        "title": "Accept Inline Diff"
       },
       {
         "command": "local-coder.rejectDiff",
-        "title": "Local Coder: Reject Inline Diff"
+        "category": "Local Coder",
+        "title": "Reject Inline Diff"
       },
       {
         "command": "local-coder.switchProvider",
-        "title": "Local Coder: Switch Model Provider"
+        "category": "Local Coder",
+        "title": "Switch Model Provider"
       },
       {
         "command": "local-coder.commitChanges",
-        "title": "Local Coder: Commit Staged Edits"
+        "category": "Local Coder",
+        "title": "Commit Staged Edits"
       },
       {
         "command": "local-coder.rollbackChanges",
-        "title": "Local Coder: Rollback Staged Edits"
+        "category": "Local Coder",
+        "title": "Rollback Staged Edits"
       }
     ],
     "keybindings": [
@@ -59,9 +80,26 @@
         "when": "editorTextFocus && !localCoderDiffActive"
       },
       {
+        "command": "local-coder.inlineEdit",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus && !localCoderDiffActive"
+      },
+      {
+        "command": "local-coder.inlineEdit",
+        "key": "alt+k",
+        "mac": "option+k",
+        "when": "editorTextFocus && !localCoderDiffActive"
+      },
+      {
         "command": "local-coder.openComposer",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l"
+      },
+      {
+        "command": "local-coder.openComposer",
+        "key": "alt+l",
+        "mac": "option+l"
       },
       {
         "command": "local-coder.acceptDiff",
@@ -75,6 +113,27 @@
         "when": "localCoderDiffActive"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "local-coder.inlineEdit",
+          "when": "editorTextFocus",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "local-coder.fixDiagnostics",
+          "when": "editorTextFocus",
+          "group": "1_modification@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "local-coder.openComposer",
+          "group": "navigation",
+          "title": "Local Coder Composer"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {

@@ -2,6 +2,25 @@
 
 All notable changes, additions, and architectural evolutions of the LOCAL-CODER system are meticulously recorded here.
 
+## [1.2.1] - 2026-10-21: In-Editor Keyboard Shortcut Fixes & Clean Pattern Bank
+
+### Fixes & Enhancements for VS Code Extension (v1.0.1)
+- Fixed shortcut trigger issues in VS Code:
+  * Added `Ctrl+I` (Mac: `Cmd+I`) as immediate inline edit shortcut without chord collisions.
+  * Added `Alt+K` (Mac: `Option+K`) as direct one-stroke trigger.
+  * Preserved `Ctrl+K` with active editor context.
+  * Added right-click editor context menu: "Local Coder: Inline Edit" and "Local Coder: Fix Diagnostics".
+  * Added editor title bar button with sparkle icon for instant Composer access.
+  * Fixed empty selection behavior: now automatically expands to the active line when no text is explicitly highlighted.
+  * Repackaged and reinstalled `local-coder-vscode-1.0.1.vsix` directly into user VS Code extensions.
+
+### Neural-Symbolic Clean Pattern Bank
+- Built `CleanPatternBank` in `local_coder/knowledge/pattern_bank.py` storing gold-standard architectural templates:
+  * Modern React 18: single-page dashboard with state hooks, input validation, and CSS custom properties.
+  * Layered FastAPI: Pydantic models, versioned `/api/v1/` routes, health check endpoint, and pytest verification suite.
+- Wired pattern bank into `ManifestSynthesizer`: injects verified structural contracts and production skeletons into model prompts to eliminate hallucinations and cognitive drift under 2 GB RAM.
+- Added 3 unit tests in `tests/test_pattern_bank.py` (total test suite at 59 passing tests).
+
 ## [1.2.0] - 2026-10-21: Achieving 80% to 90% Cursor Parity
 
 ### Phase 1: Asymmetric & Pluggable Intelligence Router

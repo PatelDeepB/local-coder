@@ -33,5 +33,6 @@ tests/benchmark_results.json
 .idea/
 *.swp
 *.swo
-.DS_Store
+*.vsix
+*.DS_Store
 Thumbs.db

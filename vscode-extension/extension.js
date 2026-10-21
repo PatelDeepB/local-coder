@@ -48,7 +48,7 @@ function activate(context) {
     const interval = setInterval(checkBackendHealth, 5000);
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
-    // Register Inline Edit (Ctrl+K)
+    // Register Inline Edit (Ctrl+K / Ctrl+I / Alt+K)
     const inlineEditCmd = vscode.commands.registerCommand('local-coder.inlineEdit', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -56,23 +56,27 @@ function activate(context) {
             return;
         }
 
-        const selection = editor.selection;
-        const selectedText = editor.document.getText(selection.isEmpty ? undefined : selection);
-        if (!selectedText.trim()) {
-            vscode.window.showInformationMessage('Please select a block of code to edit with Ctrl+K.');
-            return;
+        let targetRange = editor.selection;
+        let selectedText = '';
+
+        if (targetRange.isEmpty) {
+            const line = editor.document.lineAt(targetRange.active.line);
+            targetRange = line.range;
+            selectedText = line.text;
+        } else {
+            selectedText = editor.document.getText(targetRange);
         }
 
         const instruction = await vscode.window.showInputBox({
             prompt: 'How would you like Local Coder to modify this code?',
-            placeHolder: "e.g., 'Add type annotations and null safety checks'"
+            placeHolder: "e.g., 'Add type annotations, validate input, or implement function'"
         });
 
         if (!instruction) {
             return;
         }
 
-        await executeInlineEdit(editor, selection, selectedText, instruction);
+        await executeInlineEdit(editor, targetRange, selectedText || ' ', instruction);
     });
 
     // Register Accept Diff (Ctrl+Enter)
@@ -459,12 +463,12 @@ class LocalCoderComposerViewProvider {
  */
 function sendPostRequest(targetUrl, payload) {
     return new Promise((resolve, reject) => {
-        const parsed = url.parse(targetUrl);
+        const parsed = new URL(targetUrl);
         const data = JSON.stringify(payload);
         const options = {
             hostname: parsed.hostname,
-            port: parsed.port,
-            path: parsed.path,
+            port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+            path: parsed.pathname + parsed.search,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -505,11 +509,11 @@ function sendPostRequest(targetUrl, payload) {
  */
 function sendGetRequest(targetUrl) {
     return new Promise((resolve, reject) => {
-        const parsed = url.parse(targetUrl);
+        const parsed = new URL(targetUrl);
         const options = {
             hostname: parsed.hostname,
-            port: parsed.port,
-            path: parsed.path,
+            port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+            path: parsed.pathname + parsed.search,
             method: 'GET',
             timeout: 5000
         };
