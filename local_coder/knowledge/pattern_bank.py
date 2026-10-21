@@ -221,11 +221,185 @@ def test_create_and_list_item() -> None:
 )
 
 
+DJANGO_CRUD_PATTERN = ArchitecturalPattern(
+    name="Django Production CRUD Application",
+    domain="backend_fullstack",
+    keywords=("django", "django app", "django task", "models.py", "views.py"),
+    description="Production-grade Django MVC application with ModelForm, clean settings, and test cases.",
+    files=(
+        PatternFileBlueprint(
+            file_path="manage.py",
+            purpose="Django administrative entry point",
+            boilerplate_skeleton="""#!/usr/bin/env python
+import os, sys
+def main():
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core_project.settings")
+    from django.core.management import execute_from_command_line
+    execute_from_command_line(sys.argv)
+if __name__ == "__main__":
+    main()""",
+            key_requirements=("DJANGO_SETTINGS_MODULE", "execute_from_command_line"),
+        ),
+        PatternFileBlueprint(
+            file_path="core_project/settings.py",
+            purpose="Django project settings",
+            boilerplate_skeleton="""from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = "django-insecure-local-coder-dev-key"
+DEBUG = True
+ALLOWED_HOSTS = ["*"]
+INSTALLED_APPS = [
+    "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
+    "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
+    "tasks",
+]
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+ROOT_URLCONF = "core_project.urls"
+TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIRS": [BASE_DIR / "templates"], "APP_DIRS": True, "OPTIONS": {"context_processors": ["django.template.context_processors.debug", "django.template.context_processors.request", "django.contrib.auth.context_processors.auth", "django.contrib.messages.context_processors.messages"]}}]
+WSGI_APPLICATION = "core_project.wsgi.application"
+DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+LANGUAGE_CODE, TIME_ZONE, USE_TZ = "en-us", "UTC", True
+STATIC_URL, DEFAULT_AUTO_FIELD = "static/", "django.db.models.BigAutoField" """,
+            key_requirements=("INSTALLED_APPS with tasks", "ROOT_URLCONF", "DATABASES sqlite3"),
+        ),
+        PatternFileBlueprint(
+            file_path="core_project/urls.py",
+            purpose="Project URL routing",
+            boilerplate_skeleton="""from django.contrib import admin
+from django.urls import include, path
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("tasks.urls")),
+]""",
+            key_requirements=("include tasks.urls", "admin site"),
+        ),
+        PatternFileBlueprint(
+            file_path="tasks/models.py",
+            purpose="Task ORM Model",
+            boilerplate_skeleton="""from django.db import models
+class Task(models.Model):
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=[("TODO", "To Do"), ("DONE", "Done")], default="TODO")
+    created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return f"{self.title} [{self.status}]" """,
+            key_requirements=("models.Model", "CharField title", "choices for status"),
+        ),
+        PatternFileBlueprint(
+            file_path="tasks/forms.py",
+            purpose="Django ModelForm",
+            boilerplate_skeleton="""from django import forms
+from tasks.models import Task
+class TaskForm(forms.ModelForm):
+    class Meta:
+        model = Task
+        fields = ["title", "description", "status"]
+        widgets = {
+            "title": forms.TextInput(attrs={"class": "form-control"}),
+            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+        }""",
+            key_requirements=("forms.ModelForm", "Meta model = Task", "fields list"),
+        ),
+        PatternFileBlueprint(
+            file_path="tasks/views.py",
+            purpose="Task view controllers with all required imports",
+            boilerplate_skeleton="""from django.shortcuts import render, redirect, get_object_or_404
+from tasks.models import Task
+from tasks.forms import TaskForm
+
+def task_list(request):
+    tasks = Task.objects.all().order_by("-created_at")
+    return render(request, "tasks/task_list.html", {"tasks": tasks})
+
+def task_create(request):
+    if request.method == "POST":
+        form = TaskForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect("tasks:task_list")
+    else:
+        form = TaskForm()
+    return render(request, "tasks/task_form.html", {"form": form})
+
+def task_delete(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if request.method == "POST":
+        task.delete()
+    return redirect("tasks:task_list")""",
+            key_requirements=("from django.shortcuts import render, redirect, get_object_or_404", "from tasks.models import Task", "from tasks.forms import TaskForm"),
+        ),
+        PatternFileBlueprint(
+            file_path="tasks/urls.py",
+            purpose="Task application URLs",
+            boilerplate_skeleton="""from django.urls import path
+from tasks import views
+app_name = "tasks"
+urlpatterns = [
+    path("", views.task_list, name="task_list"),
+    path("create/", views.task_create, name="task_create"),
+    path("<int:pk>/delete/", views.task_delete, name="task_delete"),
+]""",
+            key_requirements=("app_name = 'tasks'", "views.task_list", "views.task_create"),
+        ),
+        PatternFileBlueprint(
+            file_path="tasks/tests.py",
+            purpose="Django TestCase suite",
+            boilerplate_skeleton="""from django.test import TestCase, Client
+from django.urls import reverse
+from tasks.models import Task
+
+class TaskTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.task = Task.objects.create(title="Test Task")
+
+    def test_task_list_view(self):
+        resp = self.client.get(reverse("tasks:task_list"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_task_create_view(self):
+        resp = self.client.post(reverse("tasks:task_create"), {"title": "New Task", "status": "TODO"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Task.objects.filter(title="New Task").exists())""",
+            key_requirements=("TestCase", "reverse tasks:task_list", "assertEqual status_code 200 and 302"),
+        ),
+        PatternFileBlueprint(
+            file_path="templates/tasks/task_list.html",
+            purpose="HTML task list template",
+            boilerplate_skeleton="""<!DOCTYPE html>
+<html>
+<head><title>Task Manager</title></head>
+<body>
+  <h1>Tasks</h1>
+  <a href="{% url 'tasks:task_create' %}">+ New Task</a>
+  <ul>
+    {% for task in tasks %}
+      <li>{{ task.title }} [{{ task.status }}]</li>
+    {% empty %}
+      <li>No tasks yet.</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>""",
+            key_requirements=("HTML5", "url tasks:task_create", "for task in tasks loop"),
+        ),
+    ),
+)
+
+
 class CleanPatternBank:
     """Provides instant architectural skeletons and clean-code guidance."""
 
     def __init__(self) -> None:
-        self._patterns = [REACT_DASHBOARD_PATTERN, FASTAPI_REST_PATTERN]
+        self._patterns = [REACT_DASHBOARD_PATTERN, FASTAPI_REST_PATTERN, DJANGO_CRUD_PATTERN]
 
     def match_pattern(self, goal: str) -> Optional[ArchitecturalPattern]:
         """Finds matching architectural pattern for user goal."""

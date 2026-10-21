@@ -58,11 +58,13 @@ function activate(context) {
 
         let targetRange = editor.selection;
         let selectedText = '';
+        let isFullLine = false;
 
         if (targetRange.isEmpty) {
             const line = editor.document.lineAt(targetRange.active.line);
-            targetRange = line.range;
+            targetRange = line.rangeIncludingLineBreak;
             selectedText = line.text;
+            isFullLine = true;
         } else {
             selectedText = editor.document.getText(targetRange);
         }
@@ -76,7 +78,7 @@ function activate(context) {
             return;
         }
 
-        await executeInlineEdit(editor, targetRange, selectedText || ' ', instruction);
+        await executeInlineEdit(editor, targetRange, selectedText || ' ', instruction, isFullLine);
     });
 
     // Register Accept Diff (Ctrl+Enter)
@@ -234,7 +236,7 @@ function activate(context) {
 /**
  * Executes inline edit request and renders diff overlay.
  */
-async function executeInlineEdit(editor, selection, selectedText, instruction) {
+async function executeInlineEdit(editor, selection, selectedText, instruction, isFullLine = false) {
     const baseUrl = await getActiveBaseUrl();
 
     const document = editor.document;
@@ -258,7 +260,11 @@ async function executeInlineEdit(editor, selection, selectedText, instruction) {
                 suffix_context: suffix
             });
 
-            const replacementCode = response.replacement_code;
+            let replacementCode = response.replacement_code || '';
+            if (isFullLine && !replacementCode.endsWith('\n')) {
+                replacementCode += '\n';
+            }
+
             activeDiffState = {
                 editor: editor,
                 range: selection,

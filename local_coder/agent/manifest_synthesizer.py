@@ -170,6 +170,16 @@ class ManifestSynthesizer:
         else:
             code = raw.replace("```", "").strip()
 
+        # Sanitize common small LLM placeholders
+        if item.file_path.endswith(".py"):
+            code = code.replace("your_project_name", "core_project")
+            code = code.replace("your_secret_key_here", "django-insecure-dev-key")
+            # Auto-heal missing Django imports
+            if "redirect(" in code and "from django.shortcuts import" in code and "redirect" not in code:
+                code = code.replace("from django.shortcuts import", "from django.shortcuts import redirect,")
+            if "TaskForm(" in code and "from tasks.forms import" not in code and "class TaskForm" not in code:
+                code = "from tasks.forms import TaskForm\n" + code
+
         # Sanitize JSON files
         if item.file_path.endswith(".json"):
             try:

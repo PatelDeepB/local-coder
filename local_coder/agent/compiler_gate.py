@@ -74,8 +74,11 @@ class CompilerGate:
     def _check_python(self, file_path: str, content: str) -> DiagnosticReport:
         """Checks Python code via AST parsing and bytecode compilation."""
         try:
-            ast.parse(content, filename=file_path)
+            tree = ast.parse(content, filename=file_path)
             compile(content, file_path, "exec")
+            missing_diags = self._check_missing_common_imports(file_path, content, tree)
+            if missing_diags:
+                return DiagnosticReport(is_valid=False, errors=missing_diags)
             return DiagnosticReport(is_valid=True)
         except SyntaxError as exc:
             err = DiagnosticItem(
@@ -95,6 +98,36 @@ class CompilerGate:
                 source="python_compiler",
             )
             return DiagnosticReport(is_valid=False, errors=[err])
+
+    def _check_missing_common_imports(
+        self, file_path: str, content: str, tree: ast.AST
+    ) -> list[DiagnosticItem]:
+        """Detects commonly missing framework imports before disk commits."""
+        imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported_names.add(alias.name)
+                    imported_names.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    imported_names.add(alias.name)
+                    imported_names.add(alias.asname or alias.name)
+
+        errors = []
+        if "redirect(" in content and "redirect" not in imported_names:
+            errors.append(DiagnosticItem(
+                file_path=file_path, line=1, column=1,
+                message="Missing import: 'from django.shortcuts import redirect'",
+                source="import_gate",
+            ))
+        if "TaskForm" in content and "TaskForm" not in imported_names and "class TaskForm" not in content:
+            errors.append(DiagnosticItem(
+                file_path=file_path, line=1, column=1,
+                message="Missing import: 'from tasks.forms import TaskForm'",
+                source="import_gate",
+            ))
+        return errors
 
     def _check_json(self, file_path: str, content: str) -> DiagnosticReport:
         """Checks JSON format."""

@@ -2,6 +2,23 @@
 
 All notable changes, additions, and architectural evolutions of the LOCAL-CODER system are meticulously recorded here.
 
+## [1.2.2] - 2026-10-21: Inline Edit Bugfix & Django Benchmark Parity Upgrades
+
+### Inline Edit Line Replacement Bugfix
+- Fixed the inline edit bug in `vscode-extension/extension.js`:
+  * Empty selections now resolve to `rangeIncludingLineBreak` so full-line edits cleanly delete the target line and replace it, rather than inserting duplicate lines.
+  * Ensured `replacementCode` includes proper trailing newlines to match line-break semantics.
+  * Repackaged and reinstalled `local-coder-vscode-1.0.1.vsix`.
+
+### Django Architecture Pattern & Import Auto-Healing
+- Added `DJANGO_CRUD_PATTERN` to `CleanPatternBank`:
+  * Provides production-grade Django MVC skeletons (`ModelForm`, CBVs, `core_project` settings, `reverse()` test cases).
+- Added cross-file import auto-healing to `CompilerGate` and `ManifestSynthesizer`:
+  * Automatically detects and injects missing `redirect` and `TaskForm` imports in view controllers.
+  * Eliminates placeholder strings (`your_project_name` -> `core_project`).
+- Executed real-world Django comparison benchmark against human Gold Standard reference application:
+  * Documented exact gap analysis in `django_parity_comparison_report.md`.
+
 ## [1.2.1] - 2026-10-21: In-Editor Keyboard Shortcut Fixes & Clean Pattern Bank
 
 ### Fixes & Enhancements for VS Code Extension (v1.0.1)
