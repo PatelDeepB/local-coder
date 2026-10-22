@@ -19,7 +19,7 @@ def test_should_generate_raw_fim_completion() -> None:
         token_count=2,
         peak_rss_mb=500.0,
     )
-    engine = InfillingEngine(mock_runner)
+    engine = InfillingEngine(mock_runner, enable_speculative=False)
 
     # Act
     result = engine.complete(prefix="is_active", suffix=":\n    pass\n")
@@ -41,7 +41,7 @@ def test_should_strip_fim_tokens_from_completion() -> None:
         token_count=4,
         peak_rss_mb=500.0,
     )
-    engine = InfillingEngine(mock_runner)
+    engine = InfillingEngine(mock_runner, enable_speculative=False)
 
     # Act
     result = engine.complete(prefix="def add(x, y):\n    ", suffix="\n")
@@ -62,6 +62,7 @@ def test_should_serve_autocomplete_endpoint() -> None:
         peak_rss_mb=500.0,
     )
     mock_orch.runner = mock_runner
+    mock_orch.infilling_engine = InfillingEngine(mock_runner, enable_speculative=False)
     api_module.orchestrator_instance = mock_orch
 
     client = TestClient(app)

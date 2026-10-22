@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Optional
 import time
 
+from local_coder.neural.speculative_drafter import SpeculativeDraftingEngine
+
 
 @dataclass(frozen=True)
 class InfillingResult:
@@ -17,8 +19,19 @@ class InfillingResult:
 class InfillingEngine:
     """Formats FIM prompts and generates real-time inline tab completions."""
 
-    def __init__(self, runner: Any) -> None:
+    def __init__(
+        self,
+        runner: Any,
+        drafter: Optional[SpeculativeDraftingEngine] = None,
+        enable_speculative: bool = True,
+    ) -> None:
         self.runner = runner
+        if drafter is not None:
+            self.drafter: Optional[SpeculativeDraftingEngine] = drafter
+        elif enable_speculative:
+            self.drafter = SpeculativeDraftingEngine()
+        else:
+            self.drafter = None
 
     def complete(
         self,
@@ -29,12 +42,23 @@ class InfillingEngine:
     ) -> InfillingResult:
         """Executes FIM code completion ahead of cursor position."""
         start_time = time.perf_counter()
-        
+
         # Keep recent context window for sub-second CPU latency
         trimmed_prefix = prefix[-1000:] if len(prefix) > 1000 else prefix
         trimmed_suffix = suffix[:500] if len(suffix) > 500 else suffix
 
-        # Standard Qwen2.5-Coder FIM prompt formatting
+        # Step 1: Sub-millisecond speculative drafting lookup
+        if self.drafter:
+            draft = self.drafter.draft_continuation(trimmed_prefix)
+            if draft and draft.continuation.strip():
+                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                return InfillingResult(
+                    completion=draft.continuation,
+                    elapsed_ms=elapsed_ms,
+                    token_count=len(draft.continuation.split()),
+                )
+
+        # Step 2: Fall back to local neural runner FIM generation
         fim_prompt = f"<|fim_prefix|>{trimmed_prefix}<|fim_suffix|>{trimmed_suffix}<|fim_middle|>"
         
         stop_tokens = ["<|fim_pad|>", "<|fim_prefix|>", "<|endoftext|>", "<|file_sep|>"]

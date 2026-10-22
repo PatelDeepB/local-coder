@@ -9,6 +9,8 @@ import uuid
 
 from local_coder.agent.execution_loop import AgentExecutionLoop
 from local_coder.agent.agent_state import AgentSessionState, AgentStep, TaskStatus
+from local_coder.agent.compiler_gate import CompilerGate
+from local_coder.agent.hierarchical_planner import HierarchicalPlanner
 from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
@@ -20,9 +22,11 @@ from local_coder.knowledge.hdc_code_index import HDCCodeIndex
 from local_coder.knowledge.mmap_symbol_graph import MmapSymbolGraph
 from local_coder.memory.episodic_ring import EpisodicRollingHashRing
 from local_coder.neural.contract_planner import ContractPlanner
+from local_coder.neural.infilling_engine import InfillingEngine
 from local_coder.neural.llama_runner import LlamaModelRunner
 from local_coder.neural.model_router import ModelRouter, ModelProvider
 from local_coder.neural.slot_coder import SlotCoder
+from local_coder.neural.speculative_drafter import SpeculativeDraftingEngine
 from local_coder.tools.file_tools import (
     FileOutlineTool,
     ListDirectoryTool,
@@ -81,6 +85,8 @@ class LocalCoderOrchestrator:
         self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
         self.contract_planner = ContractPlanner(self.runner)
         self.slot_coder = SlotCoder(self.runner)
+        self.speculative_drafter = SpeculativeDraftingEngine()
+        self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
 
         # Verifier Gate
         self.syntax_validator = SyntaxValidator()
@@ -105,11 +111,20 @@ class LocalCoderOrchestrator:
 
         # Agent Loop & Manifest Synthesizer
         self.agent_loop = AgentExecutionLoop(runner=self.runner, tools=self.tools)
+        self.compiler_gate = CompilerGate()
         self.manifest_synthesizer = ManifestSynthesizer(
             runner=self.runner,
             workspace=self.shadow_workspace,
             coding_knowledge=self.coding_knowledge,
         )
+        self.hierarchical_planner = HierarchicalPlanner(
+            synthesizer=self.manifest_synthesizer,
+            workspace=self.shadow_workspace,
+            compiler_gate=self.compiler_gate,
+            knowledge_db=self.coding_knowledge,
+        )
+        self.speculative_drafter = SpeculativeDraftingEngine()
+        self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
 
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
@@ -153,10 +168,13 @@ class LocalCoderOrchestrator:
                     )
                 )
 
-            manifest_files = self.manifest_synthesizer.execute_manifest_synthesis(
+            manifest = self.manifest_synthesizer.generate_manifest(user_goal)
+            results = self.hierarchical_planner.synthesize_hierarchy(
+                manifest=manifest,
                 user_goal=user_goal,
-                on_file_synthesized=on_file,
+                on_file_progress=on_file,
             )
+            manifest_files = [r.file_path for r in results]
             session.status = TaskStatus.COMPLETED
             session.final_output = f"Successfully generated full project ({len(manifest_files)} files): {', '.join(manifest_files)}"
         else:

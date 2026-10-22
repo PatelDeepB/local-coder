@@ -345,7 +345,15 @@ async def autocomplete(req: AutocompleteRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
 
     from local_coder.neural.infilling_engine import InfillingEngine
-    engine = InfillingEngine(orchestrator_instance.runner)
+
+    if (
+        hasattr(orchestrator_instance, "infilling_engine")
+        and isinstance(orchestrator_instance.infilling_engine, InfillingEngine)
+    ):
+        engine = orchestrator_instance.infilling_engine
+    else:
+        engine = InfillingEngine(orchestrator_instance.runner)
+
     result = engine.complete(
         prefix=req.prefix,
         suffix=req.suffix,
