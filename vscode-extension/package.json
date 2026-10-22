@@ -2,7 +2,7 @@
   "name": "local-coder-vscode",
   "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
   "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "pateldeep",
   "repository": {
     "type": "git",
@@ -27,6 +27,7 @@
     "onCommand:local-coder.commitChanges",
     "onCommand:local-coder.rollbackChanges",
     "onCommand:local-coder.testAndRepair",
+    "onCommand:local-coder.startDaemon",
     "onView:local-coder.chatView"
   ],
   "main": "./extension.js",
@@ -76,6 +77,11 @@
         "command": "local-coder.testAndRepair",
         "category": "Local Coder",
         "title": "Autonomous Test & Repair Loop"
+      },
+      {
+        "command": "local-coder.startDaemon",
+        "category": "Local Coder",
+        "title": "Start Background Server Daemon"
       }
     ],
     "keybindings": [

@@ -82,6 +82,27 @@ class ShadowWorkspace:
         self._staged_edits.clear()
         return applied
 
+    def commit_file(self, relative_path: str) -> bool:
+        """Commits a single staged file to disk."""
+        target_path = (self.root_dir / relative_path).resolve()
+        edit = self._staged_edits.pop(target_path, None)
+        if not edit:
+            return False
+
+        if edit.is_deletion:
+            if target_path.exists():
+                os.remove(target_path)
+        else:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(edit.staged_content)
+        return True
+
+    def discard_file(self, relative_path: str) -> bool:
+        """Discards a single staged file without affecting other files."""
+        target_path = (self.root_dir / relative_path).resolve()
+        return self._staged_edits.pop(target_path, None) is not None
+
     def discard_all(self) -> None:
         """Discards all staged edits in the shadow workspace."""
         self._staged_edits.clear()

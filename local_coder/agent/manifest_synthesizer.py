@@ -11,6 +11,7 @@ import json
 import re
 
 from local_coder.agent.compiler_gate import CompilerGate
+from local_coder.knowledge.coding_knowledge_db import CodingKnowledgeDB
 from local_coder.knowledge.pattern_bank import CleanPatternBank
 from local_coder.neural.grammar_engine import parse_tool_call_json
 from local_coder.neural.llama_runner import LlamaModelRunner
@@ -85,12 +86,18 @@ CRITICAL RULES:
 class ManifestSynthesizer:
     """Orchestrates deterministic project scaffolding file by file without cognitive drift."""
 
-    def __init__(self, runner: Any, workspace: ShadowWorkspace) -> None:
+    def __init__(
+        self,
+        runner: Any,
+        workspace: ShadowWorkspace,
+        coding_knowledge: Optional[CodingKnowledgeDB] = None,
+    ) -> None:
         self.runner = runner
         self.workspace = workspace
         self.syntax_validator = SyntaxValidator()
         self.compiler_gate = CompilerGate()
         self.pattern_bank = CleanPatternBank()
+        self.coding_knowledge = coding_knowledge or CodingKnowledgeDB()
 
     def generate_manifest(self, user_goal: str) -> list[FileManifestItem]:
         """Decomposes the user goal into a concrete list of physical files to create."""
@@ -155,6 +162,17 @@ class ManifestSynthesizer:
         guidance = self.pattern_bank.build_guidance_prompt(user_goal, item.file_path)
         if guidance:
             prompt = f"{guidance}\n\n{prompt}"
+
+        if self.coding_knowledge:
+            hits = self.coding_knowledge.search(f"{item.purpose} {item.file_path}", limit=1)
+            if hits:
+                h = hits[0]
+                contract_block = (
+                    f"=== CANONICAL MODERN IDIOM: {h.topic} ({h.version}) ===\n"
+                    f"Signature: {h.signature}\n"
+                    f"Reference Pattern:\n```\n{h.canonical_code}\n```\n"
+                )
+                prompt = f"{contract_block}\n\n{prompt}"
 
         res = self.runner.generate(
             prompt=prompt,

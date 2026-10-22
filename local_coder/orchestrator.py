@@ -13,6 +13,7 @@ from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
 from local_coder.core.memory_guard import MemoryGuard
+from local_coder.knowledge.coding_knowledge_db import CodingKnowledgeDB
 from local_coder.knowledge.dependency_graph import CodebaseDependencyGraph
 from local_coder.knowledge.file_watcher import IncrementalFileWatcher
 from local_coder.knowledge.hdc_code_index import HDCCodeIndex
@@ -74,6 +75,7 @@ class LocalCoderOrchestrator:
             tree_indexer=self.tree_indexer,
             dependency_graph=self.dependency_graph,
         )
+        self.coding_knowledge = CodingKnowledgeDB()
 
         # Neural Engine
         self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
@@ -103,7 +105,11 @@ class LocalCoderOrchestrator:
 
         # Agent Loop & Manifest Synthesizer
         self.agent_loop = AgentExecutionLoop(runner=self.runner, tools=self.tools)
-        self.manifest_synthesizer = ManifestSynthesizer(runner=self.runner, workspace=self.shadow_workspace)
+        self.manifest_synthesizer = ManifestSynthesizer(
+            runner=self.runner,
+            workspace=self.shadow_workspace,
+            coding_knowledge=self.coding_knowledge,
+        )
 
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
@@ -216,6 +222,14 @@ class LocalCoderOrchestrator:
     def commit_changes(self) -> list[str]:
         """Applies shadow workspace edits to real disk files."""
         return self.transaction_mgr.commit()
+
+    def commit_file(self, relative_path: str) -> bool:
+        """Commits a single staged file to disk."""
+        return self.shadow_workspace.commit_file(relative_path)
+
+    def discard_file(self, relative_path: str) -> bool:
+        """Discards a single staged file."""
+        return self.shadow_workspace.discard_file(relative_path)
 
     def rollback_changes(self) -> None:
         """Discards all staged edits."""

@@ -84,6 +84,10 @@ class TestRepairRequest(BaseModel):
     max_iterations: int = 3
 
 
+class SingleFileRequest(BaseModel):
+    file_path: str
+
+
 class ProviderChangeRequest(BaseModel):
     provider: str
     model: Optional[str] = None
@@ -205,6 +209,66 @@ async def get_staged_diff() -> dict[str, str]:
             diffs.append(diff)
 
     return {"diff": "\n".join(diffs)}
+
+
+@app.get("/api/v1/staged-files")
+async def get_staged_files() -> dict[str, Any]:
+    """Returns detailed metadata and diffs for all staged files."""
+    if not orchestrator_instance:
+        return {"files": []}
+
+    patcher = PrecisionPatcher()
+    files_data = []
+    for path, edit in orchestrator_instance.shadow_workspace._staged_edits.items():
+        orig = edit.original_content or ""
+        new = edit.staged_content
+        rel = str(path.relative_to(orchestrator_instance.root_dir)).replace("\\", "/")
+        diff = patcher.generate_unified_diff(orig, new, file_path=rel)
+        files_data.append(
+            {
+                "file_path": rel,
+                "original_content": orig,
+                "staged_content": new,
+                "diff": diff,
+                "is_deletion": edit.is_deletion,
+            }
+        )
+    return {"files": files_data}
+
+
+@app.post("/api/v1/staged-files/commit")
+async def commit_single_file(req: SingleFileRequest) -> dict[str, Any]:
+    """Commits a single staged file to disk."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    success = orchestrator_instance.commit_file(req.file_path)
+    return {"status": "ok" if success else "not_found", "file_path": req.file_path}
+
+
+@app.post("/api/v1/staged-files/discard")
+async def discard_single_file(req: SingleFileRequest) -> dict[str, Any]:
+    """Discards a single staged file."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    success = orchestrator_instance.discard_file(req.file_path)
+    return {"status": "ok" if success else "not_found", "file_path": req.file_path}
+
+
+@app.get("/api/v1/workspace/files")
+async def list_workspace_files() -> dict[str, Any]:
+    """Returns list of all code file paths in workspace for context mention autocomplete."""
+    if not orchestrator_instance:
+        return {"files": []}
+
+    files = []
+    ignored = {".git", ".venv", "venv", "node_modules", "__pycache__", ".localcoder"}
+    for p in orchestrator_instance.root_dir.rglob("*"):
+        if p.is_file() and not any(part in ignored for part in p.parts):
+            rel = str(p.relative_to(orchestrator_instance.root_dir)).replace("\\", "/")
+            files.append(rel)
+    return {"files": sorted(files[:200])}
 
 
 @app.post("/api/v1/commit")
