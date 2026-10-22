@@ -15,6 +15,7 @@ from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
 from local_coder.core.memory_guard import MemoryGuard
+from local_coder.knowledge.ast_compactor import ASTSemanticCompactor
 from local_coder.knowledge.coding_knowledge_db import CodingKnowledgeDB
 from local_coder.knowledge.dependency_graph import CodebaseDependencyGraph
 from local_coder.knowledge.file_watcher import IncrementalFileWatcher
@@ -87,6 +88,7 @@ class LocalCoderOrchestrator:
         self.slot_coder = SlotCoder(self.runner)
         self.speculative_drafter = SpeculativeDraftingEngine()
         self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
+        self.ast_compactor = ASTSemanticCompactor()
 
         # Verifier Gate
         self.syntax_validator = SyntaxValidator()
@@ -123,8 +125,6 @@ class LocalCoderOrchestrator:
             compiler_gate=self.compiler_gate,
             knowledge_db=self.coding_knowledge,
         )
-        self.speculative_drafter = SpeculativeDraftingEngine()
-        self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
 
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
@@ -189,12 +189,15 @@ class LocalCoderOrchestrator:
                 )
             ]
             repo_inv = "Existing Project Files:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
+            schema = self.ast_compactor.build_workspace_schema(self.root_dir, self.shadow_workspace)
+            schema_block = f"\n\nVirtual Workspace Schema (64K token context compressed):\n{schema}" if schema else ""
             mod_rules = (
-                f"{repo_inv}\n\n"
+                f"{repo_inv}{schema_block}\n\n"
                 f"CRITICAL RULES FOR MODIFICATIONS:\n"
                 f"1. When modifying existing files, edit them at their exact paths in-place.\n"
-                f"2. DO NOT create duplicate files in other subdirectories.\n"
-                f"3. Preserve all existing classes and methods, adding or updating only the requested functionality."
+                f"2. Use apply_search_replace_patch with <<<<<<< SEARCH ... ======= ... >>>>>>> for precision edits.\n"
+                f"3. NEVER use write_file with '# Existing code...' stubs. Always provide complete code or precision patches.\n"
+                f"4. Preserve all existing classes and methods, adding or updating only the requested functionality."
             )
             full_rules = f"{rules}\n\n{mod_rules}" if rules else mod_rules
             session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=full_rules)

@@ -64,6 +64,7 @@ class LlamaModelRunner:
                 "n_ctx": self.context_size,
                 "n_batch": CONFIG.prompt_batch_size,
                 "n_threads": self.hw_profile.optimal_threads,
+                "n_threads_batch": self.hw_profile.optimal_threads,
                 "verbose": False,
             }
             if CONFIG.kv_cache_quantization_type is not None:

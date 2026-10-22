@@ -17,7 +17,7 @@ RULES:
 - When creating a new project or multi-file application (React, Next.js, Python), use write_file to write each file in the checklist plan.
 - DO NOT call read_file on files you are supposed to create from scratch. Use write_file to create them directly!
 - When you need to take an action, you can emit either:
-  Format A (Direct XML tag - recommended for code without JSON escaping):
+  Format A (Direct XML tag - recommended for new complete files):
   <write_file path="path/to/file">
   ... full source code ...
   </write_file>
@@ -26,6 +26,19 @@ RULES:
   ```json
   {"tool": "<tool_name>", "arguments": {<kwargs>}}
   ```
+
+  Format C (Fast Apply Search-Replace Diff - highly recommended for modifying existing files):
+  <patch file="path/to/file">
+  <<<<<<< SEARCH
+  exact lines of existing code to locate
+  =======
+  new replacement code
+  >>>>>>>
+  </patch>
+
+- RULES FOR MODIFICATIONS:
+  - When modifying an EXISTING file, ALWAYS use Format C (<patch file="...">) to surgically update only the required lines.
+  - NEVER use write_file to overwrite an existing file with lazy placeholders like '# Existing code...' or '// ...'! Emitting lazy comments is strictly forbidden.
 - GENERALIZED ENGINEERING WORKFLOW:
   1. Follow the checklist plan systematically step by step.
   2. For multi-file applications (e.g. React, Next.js, FastAPI, Python packages), create each file cleanly using write_file.

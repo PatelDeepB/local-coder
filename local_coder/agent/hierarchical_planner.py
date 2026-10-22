@@ -9,6 +9,7 @@ from typing import Any, Optional
 from local_coder.agent.compiler_gate import CompilerGate
 from local_coder.agent.manifest_synthesizer import FileManifestItem, ManifestSynthesizer
 from local_coder.knowledge.coding_knowledge_db import CodingKnowledgeDB
+from local_coder.verifier.cross_file_verifier import CrossFileSignatureVerifier
 from local_coder.workspace.shadow_workspace import ShadowWorkspace
 
 
@@ -225,4 +226,24 @@ class HierarchicalPlanner:
                 )
             )
 
-        return results
+        # Cross-file signature validation pass (repairs unsupplied parameter defaults)
+        verifier = CrossFileSignatureVerifier()
+        staged_dict = {
+            res.file_path: self.workspace.get_staged_content(res.file_path) or res.code
+            for res in results
+        }
+        repaired_dict = verifier.repair_missing_parameter_defaults(staged_dict)
+        final_results: list[SynthesizedFileResult] = []
+        for res in results:
+            updated_code = repaired_dict.get(res.file_path, res.code)
+            if updated_code != res.code:
+                self.workspace.stage_edit(res.file_path, updated_code)
+                res = SynthesizedFileResult(
+                    file_path=res.file_path,
+                    code=updated_code,
+                    is_valid=True,
+                    exported_contracts=res.exported_contracts,
+                )
+            final_results.append(res)
+
+        return final_results

@@ -56,6 +56,34 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         content = m_file.group(2).strip()
         return "write_file", {"file_path": path, "content": content}
 
+    # Format 4: Search-Replace Patch Hunk block
+    m_xml_patch = re.search(r'<patch\s+(?:file|path|file_path)=["\']([^"\']+)["\']\s*>(.*?)(?:</patch>|$)', clean, flags=re.DOTALL)
+    if m_xml_patch:
+        patch_path = m_xml_patch.group(1).strip().strip("`'\" ")
+        patch_body = m_xml_patch.group(2)
+        m_hunk = re.search(r'<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)[\r\n]+(?:>{5,9}|$)', patch_body, flags=re.DOTALL)
+        if m_hunk:
+            return "apply_search_replace_patch", {
+                "file_path": patch_path,
+                "search_block": m_hunk.group(1),
+                "replace_block": m_hunk.group(2),
+            }
+
+    m_patch = re.search(
+        r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
+        clean,
+        flags=re.DOTALL,
+    )
+    if m_patch:
+        patch_path = m_patch.group(1).strip().strip("`'\" ")
+        search_block = m_patch.group(2)
+        replace_block = m_patch.group(3)
+        return "apply_search_replace_patch", {
+            "file_path": patch_path,
+            "search_block": search_block,
+            "replace_block": replace_block,
+        }
+
     # Pattern 1: Markdown json block
     md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, flags=re.DOTALL)
     candidate_texts = []

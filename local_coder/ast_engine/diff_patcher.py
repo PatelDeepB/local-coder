@@ -28,7 +28,8 @@ class PrecisionPatcher:
         """Finds search_block within original_content and replaces it."""
         norm_orig = original_content.replace("\r\n", "\n")
         norm_search = search_block.replace("\r\n", "\n").strip()
-        norm_replace = replace_block.replace("\r\n", "\n").strip()
+        raw_replace = replace_block.replace("\r\n", "\n").strip()
+        norm_replace = re.sub(r"(?m)^[<>=]{5,9}.*$", "", raw_replace).strip("\r\n")
 
         if not norm_search:
             return PatchResult(
@@ -53,6 +54,23 @@ class PrecisionPatcher:
             modified = norm_orig[: match.start()] + norm_replace + norm_orig[match.end() :]
             diff = self.generate_unified_diff(norm_orig, modified)
             return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
+
+        # 3. Ellipsis wildcard match attempt (when search block contains '...' representing elided body)
+        if "..." in norm_search:
+            raw_chunks = [c for c in norm_search.split("...") if c.strip()]
+            if raw_chunks:
+                escaped_chunks = [
+                    re.sub(r"\\\s+", r"\\s+", re.escape(c.strip()))
+                    for c in raw_chunks
+                ]
+                wildcard_pattern = r"\s*[\s\S]*?\s*".join(escaped_chunks)
+                if norm_search.rstrip().endswith("..."):
+                    wildcard_pattern += r"[\s\S]*?(?=\n\s*(?:def\s|class\s|\Z))"
+                match = re.search(wildcard_pattern, norm_orig)
+                if match:
+                    modified = norm_orig[: match.start()] + norm_replace + norm_orig[match.end() :]
+                    diff = self.generate_unified_diff(norm_orig, modified)
+                    return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
 
         return PatchResult(
             is_success=False,

@@ -35,3 +35,26 @@ def test_should_fail_gracefully_when_search_block_not_found() -> None:
     # Assert
     assert res.is_success is False
     assert "could not be located" in (res.error_message or "")
+
+
+def test_should_match_with_ellipsis_wildcard() -> None:
+    # Arrange
+    patcher = PrecisionPatcher()
+    original = (
+        "def compute_total(items: list[int]) -> int:\n"
+        "    # Step 1: Initialize accumulator\n"
+        "    acc = 0\n"
+        "    for it in items:\n"
+        "        acc += it\n"
+        "    return acc\n"
+    )
+    search_b = "def compute_total(items: list[int]) -> int:\n    ...\n    return acc"
+    replace_b = "def compute_total(items: list[int]) -> int:\n    return sum(items)"
+
+    # Act
+    res = patcher.apply_search_replace(original, search_b, replace_b)
+
+    # Assert
+    assert res.is_success is True
+    assert "return sum(items)" in res.modified_content
+    assert "acc = 0" not in res.modified_content

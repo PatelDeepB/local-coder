@@ -1,6 +1,7 @@
 """The ReAct autonomous agent execution loop."""
 
 from typing import Any, Callable, Optional
+import re
 import time
 import uuid
 
@@ -118,10 +119,51 @@ class AgentExecutionLoop:
                 else:
                     duplicate_count = 0
 
+            # Anti-Clobber Guard: Reject write_file containing lazy placeholder comments
+            if tool_name == "write_file":
+                content_to_write = tool_args.get("content", "")
+                lazy_markers = ["# existing code", "// existing code", "# ...", "// ...", "/* existing code */"]
+                if any(m in content_to_write.lower() for m in lazy_markers):
+                    conversation_history.append(
+                        f"Step {step_idx} Format Violation: You attempted to overwrite a file with lazy placeholder comments ('# Existing code...'). "
+                        "You MUST use <patch file=\"path/to/file\">\n<<<<<<< SEARCH\nexact code\n=======\nreplacement code\n>>>>>>>\n</patch> "
+                        "to surgically modify only the changed lines!"
+                    )
+                    continue
+
             # Execute the tool
             target_tool = self.tools[tool_name]
             try:
-                tool_outcome: ToolResult = target_tool.execute(**tool_args)
+                if tool_name == "apply_search_replace_patch":
+                    all_patches = re.findall(
+                        r'<patch\s+(?:file|path|file_path)=["\']([^"\']+)["\']\s*>(.*?)(?:</patch>|$)',
+                        raw_output,
+                        flags=re.DOTALL,
+                    )
+                    if len(all_patches) > 1:
+                        applied_files: list[str] = []
+                        for p_path, p_body in all_patches:
+                            m_hunk = re.search(r'<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)[\r\n]+(?:>{5,9}|$)', p_body, flags=re.DOTALL)
+                            if m_hunk:
+                                clean_p = p_path.strip().strip("`'\" ")
+                                p_res = target_tool.execute(
+                                    file_path=clean_p,
+                                    search_block=m_hunk.group(1),
+                                    replace_block=m_hunk.group(2),
+                                )
+                                if p_res.is_success:
+                                    applied_files.append(clean_p)
+                        if applied_files:
+                            tool_outcome = ToolResult(
+                                is_success=True,
+                                output=f"Successfully applied {len(applied_files)} search-replace patches to: {', '.join(applied_files)}",
+                            )
+                        else:
+                            tool_outcome = target_tool.execute(**tool_args)
+                    else:
+                        tool_outcome = target_tool.execute(**tool_args)
+                else:
+                    tool_outcome = target_tool.execute(**tool_args)
             except Exception as exc:
                 tool_outcome = ToolResult(is_success=False, output="", error_message=str(exc))
 

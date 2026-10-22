@@ -82,3 +82,25 @@ def test_should_parse_xml_attribute_write_file_format() -> None:
     assert tool == "write_file"
     assert args.get("file_path") == "src/App.js"
     assert "function App()" in args.get("content", "")
+
+
+def test_should_parse_search_replace_patch_hunk_format() -> None:
+    # Arrange
+    raw_text = (
+        '<patch file="aggregator.py">\n'
+        '<<<<<<< SEARCH\n'
+        'def __init__(self, window_size):\n'
+        '=======\n'
+        'def __init__(self, window_size=10, filter_tags=None):\n'
+        '>>>>>>>\n'
+        '</patch>'
+    )
+
+    # Act
+    tool, args = parse_tool_call_json(raw_text)
+
+    # Assert
+    assert tool == "apply_search_replace_patch"
+    assert args.get("file_path") == "aggregator.py"
+    assert "def __init__(self, window_size):" in args.get("search_block", "")
+    assert "def __init__(self, window_size=10, filter_tags=None):" in args.get("replace_block", "")

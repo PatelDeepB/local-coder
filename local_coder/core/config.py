@@ -25,7 +25,7 @@ class LocalCoderConfig:
     )
     max_rss_mb: float = 1900.0  # Strict safe ceiling under 2.0 GB RAM limit
     context_window_size: int = 4096
-    prompt_batch_size: int = 256
+    prompt_batch_size: int = 512
     terminal_timeout_seconds: float = 30.0
     enable_flash_attention: bool = False
     kv_cache_quantization_type: Optional[int] = None
