@@ -203,20 +203,10 @@ class ManifestSynthesizer:
 
         # Sanitize common small LLM placeholders
         if item.file_path.endswith(".py"):
-            code = code.replace("your_project_name", "core_project")
-            code = code.replace("your_secret_key_here", "django-insecure-dev-key")
-            # Auto-heal missing Django imports
-            if "redirect(" in code and "from django.shortcuts import" in code and "redirect" not in code:
-                code = code.replace("from django.shortcuts import", "from django.shortcuts import redirect,")
-            if "TaskForm(" in code and "from tasks.forms import" not in code and "class TaskForm" not in code:
-                code = "from tasks.forms import TaskForm\n" + code
-            # Auto-heal missing typing imports
-            for sym in ("Dict", "List", "Optional", "Tuple", "Any", "Union"):
-                if (f"{sym}[" in code or f": {sym}" in code or f"-> {sym}" in code) and f"import {sym}" not in code and f", {sym}" not in code:
-                    if "from typing import" in code:
-                        code = code.replace("from typing import", f"from typing import {sym},")
-                    else:
-                        code = f"from typing import {sym}\n" + code
+            typing_symbols = ["Dict", "List", "Optional", "Tuple", "Any", "Union", "Callable"]
+            needed = [sym for sym in typing_symbols if (f"{sym}[" in code or f": {sym}" in code or f"-> {sym}" in code) and f"import {sym}" not in code and f", {sym}" not in code]
+            if needed:
+                code = f"from typing import {', '.join(needed)}\n" + code
 
         # Sanitize JSON files
         if item.file_path.endswith(".json"):

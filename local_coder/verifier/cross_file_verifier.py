@@ -142,3 +142,69 @@ class CrossFileSignatureVerifier:
                     pass
 
         return repaired_files
+
+    def repair_cross_class_method_calls(
+        self, files: dict[str, str]
+    ) -> dict[str, str]:
+        """Heals test files where a variable was initialized with class A but calls methods from class B."""
+        class_methods: dict[str, set[str]] = {}
+        for fp, code in files.items():
+            if not fp.endswith(".py"):
+                continue
+            try:
+                tree = ast.parse(code)
+                for node in tree.body:
+                    if isinstance(node, ast.ClassDef):
+                        methods = {
+                            sub.name
+                            for sub in node.body
+                            if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        }
+                        class_methods[node.name] = methods
+            except Exception:
+                continue
+
+        repaired_files = dict(files)
+        for fp, code in files.items():
+            if not fp.endswith(".py") or not ("test_" in fp or fp.startswith("test")):
+                continue
+            try:
+                tree = ast.parse(code)
+            except Exception:
+                continue
+
+            var_classes: dict[str, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+                        var_classes[node.targets[0].id] = node.value.func.id
+
+            swaps: dict[str, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                    var_name = node.func.value.id
+                    method_name = node.func.attr
+                    if var_name in var_classes:
+                        cname = var_classes[var_name]
+                        if cname in class_methods and method_name not in class_methods[cname]:
+                            candidates = [c for c, mset in class_methods.items() if method_name in mset]
+                            if candidates:
+                                swaps[cname] = candidates[0]
+
+            if swaps:
+                class CallReplacer(ast.NodeTransformer):
+                    def visit_Call(self, c_node: ast.Call) -> ast.AST:
+                        if isinstance(c_node.func, ast.Name) and c_node.func.id in swaps:
+                            c_node.func.id = swaps[c_node.func.id]
+                            c_node.args = []
+                            c_node.keywords = []
+                        return self.generic_visit(c_node)
+
+                new_tree = CallReplacer().visit(tree)
+                ast.fix_missing_locations(new_tree)
+                try:
+                    repaired_files[fp] = ast.unparse(new_tree)
+                except Exception:
+                    pass
+
+        return repaired_files

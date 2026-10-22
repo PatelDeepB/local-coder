@@ -34,3 +34,26 @@ def test_should_repair_unsupplied_parameter_defaults() -> None:
     # Re-evaluating should yield 0 mismatches
     remaining_mismatches = verifier.find_mismatched_calls(repaired)
     assert len(remaining_mismatches) == 0
+
+
+def test_should_repair_cross_class_method_calls() -> None:
+    verifier = CrossFileSignatureVerifier()
+    files = {
+        "rate_limiter.py": (
+            "class TokenBucket:\n"
+            "    def refill(self): pass\n\n"
+            "class TieredRateLimiter:\n"
+            "    def acquire(self): pass\n"
+        ),
+        "test_limiter.py": (
+            "def test_rate_limiting():\n"
+            "    bucket = TokenBucket(capacity=10)\n"
+            "    res = bucket.acquire()\n"
+        ),
+    }
+
+    repaired = verifier.repair_cross_class_method_calls(files)
+
+    # In test_limiter.py, TokenBucket() should be swapped to TieredRateLimiter()
+    assert "TieredRateLimiter()" in repaired["test_limiter.py"]
+    assert "TokenBucket(" not in repaired["test_limiter.py"]

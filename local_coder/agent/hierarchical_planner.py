@@ -233,6 +233,7 @@ class HierarchicalPlanner:
             for res in results
         }
         repaired_dict = verifier.repair_missing_parameter_defaults(staged_dict)
+        repaired_dict = verifier.repair_cross_class_method_calls(repaired_dict)
         final_results: list[SynthesizedFileResult] = []
         for res in results:
             updated_code = repaired_dict.get(res.file_path, res.code)
