@@ -24,7 +24,7 @@ class LocalCoderComposerViewProvider {
         webviewView.webview.html = getComposerHtml(providerName);
 
         webviewView.webview.onDidReceiveMessage(async (message) => {
-            const baseUrl = await getActiveBaseUrl();
+            const baseUrl = getActiveBaseUrl();
 
             switch (message.command) {
                 case 'submitTask':

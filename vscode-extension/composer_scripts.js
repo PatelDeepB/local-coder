@@ -58,6 +58,9 @@ function getComposerScripts() {
             if (isExecuting) return;
             const goal = goalInput.value.trim();
             if (!goal) {
+                statusBox.className = 'status-box error';
+                statusBox.style.display = 'block';
+                statusBox.innerText = 'Please enter a goal or instruction above.';
                 goalInput.focus();
                 return;
             }
@@ -70,14 +73,18 @@ function getComposerScripts() {
             vscode.postMessage({ command: 'submitTask', goal: goal });
         }
 
-        execBtn.addEventListener('click', triggerExecute);
-
-        stopBtn.addEventListener('click', () => {
+        function triggerStop() {
             vscode.postMessage({ command: 'abortTask' });
             setLockedState(false);
             statusBox.className = 'status-box error';
             statusBox.innerText = 'Task execution stopped by user.';
-        });
+        }
+
+        window.triggerExecute = triggerExecute;
+        window.triggerStop = triggerStop;
+
+        if (execBtn) execBtn.addEventListener('click', triggerExecute);
+        if (stopBtn) stopBtn.addEventListener('click', triggerStop);
 
         goalInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

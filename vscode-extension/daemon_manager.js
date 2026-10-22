@@ -107,29 +107,10 @@ function sendGetRequest(targetUrl, timeoutMs = 5000) {
     });
 }
 
-async function getActiveBaseUrl() {
-    if (isBackendOnline && cachedActiveUrl) {
-        return cachedActiveUrl;
-    }
+function getActiveBaseUrl() {
     const config = vscode.workspace.getConfiguration('localCoder');
     const configured = config.get('apiUrl') || 'http://127.0.0.1:8080';
-    try {
-        await sendGetRequest(`${configured}/health`, 2500);
-        cachedActiveUrl = configured;
-        isBackendOnline = true;
-        return configured;
-    } catch {
-        const altUrl = configured.includes('8080') ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:8080';
-        try {
-            await sendGetRequest(`${altUrl}/health`, 2500);
-            cachedActiveUrl = altUrl;
-            isBackendOnline = true;
-            return altUrl;
-        } catch {
-            isBackendOnline = false;
-            return configured;
-        }
-    }
+    return cachedActiveUrl || configured;
 }
 
 async function checkBackendHealth(statusBarItem) {

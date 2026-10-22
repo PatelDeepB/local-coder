@@ -35,16 +35,16 @@ ${getComposerStyles()}
     </div>
 
     <div class="btn-row">
-        <button id="execBtn" style="flex: 1;">
+        <button id="execBtn" type="button" style="flex: 1;" onclick="triggerExecute()">
             <span id="btnIcon">&#9658;</span>
             <span id="btnText">Execute Plan</span>
         </button>
-        <button id="stopBtn" class="btn-danger" style="display: none;">
+        <button id="stopBtn" type="button" class="btn-danger" style="display: none;" onclick="triggerStop()">
             <span class="spinner"></span>
             <span>Stop (<span id="elapsedSec">0.0</span>s)</span>
         </button>
-        <button id="commitBtn" class="btn-sec" title="Apply all shadow edits to real files">Commit</button>
-        <button id="rollbackBtn" class="btn-sec" title="Discard staged edits">Rollback</button>
+        <button id="commitBtn" type="button" class="btn-sec" title="Apply all shadow edits to real files">Commit</button>
+        <button id="rollbackBtn" type="button" class="btn-sec" title="Discard staged edits">Rollback</button>
     </div>
 
     <div id="progressBar" class="progress-bar">
