@@ -75,7 +75,7 @@ REQUIREMENTS: {key_requirements}
 CRITICAL RULES:
 1. Write the COMPLETE implementation for this file. Never use placeholders like '// Add code here' or 'TODO'.
 2. For JSON files (e.g. package.json), output 100% valid JSON with double-quoted keys and values.
-3. For React/JSX, write working, self-contained components with all necessary imports.
+3. Write clean, self-contained, syntactically valid code matching the language conventions with all necessary imports.
 4. Output your code inside a single code block matching the file extension:
 ```{lang}
 <complete source code>
@@ -149,7 +149,18 @@ class ManifestSynthesizer:
     def synthesize_file(self, item: FileManifestItem, user_goal: str) -> str:
         """Synthesizes the complete source code for a single file in the manifest."""
         ext = Path(item.file_path).suffix.lstrip(".")
-        lang = "json" if ext == "json" else ("html" if ext == "html" else ("css" if ext == "css" else "jsx"))
+        lang_map = {
+            "py": "python",
+            "js": "javascript",
+            "jsx": "jsx",
+            "ts": "typescript",
+            "tsx": "tsx",
+            "html": "html",
+            "css": "css",
+            "json": "json",
+            "md": "markdown",
+        }
+        lang = lang_map.get(ext, ext or "text")
 
         prompt = FILE_SYNTHESIZER_PROMPT.format(
             user_goal=user_goal,
@@ -167,10 +178,12 @@ class ManifestSynthesizer:
             hits = self.coding_knowledge.search(f"{item.purpose} {item.file_path}", limit=1)
             if hits:
                 h = hits[0]
+                sig = h.signature[:300] + ("..." if len(h.signature) > 300 else "")
+                code_snippet = h.canonical_code[:500] + ("..." if len(h.canonical_code) > 500 else "")
                 contract_block = (
                     f"=== CANONICAL MODERN IDIOM: {h.topic} ({h.version}) ===\n"
-                    f"Signature: {h.signature}\n"
-                    f"Reference Pattern:\n```\n{h.canonical_code}\n```\n"
+                    f"Signature: {sig}\n"
+                    f"Reference Pattern:\n```\n{code_snippet}\n```\n"
                 )
                 prompt = f"{contract_block}\n\n{prompt}"
 

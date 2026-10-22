@@ -3,6 +3,7 @@
 import ast
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any, Optional
 
 from local_coder.agent.compiler_gate import CompilerGate
@@ -99,6 +100,65 @@ class HierarchicalPlanner:
 
         return "\n".join(contracts[:20])
 
+    def extract_exported_symbols(self, file_path: str, code: str) -> list[str]:
+        """Extracts class and top-level function names from Python source."""
+        if not file_path.endswith(".py"):
+            return []
+        try:
+            tree = ast.parse(code)
+        except Exception:
+            return []
+        return [
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and not node.name.startswith("_")
+        ]
+
+    def post_process_python_code(
+        self,
+        file_path: str,
+        code: str,
+        upstream_exports: dict[str, list[str]],
+    ) -> str:
+        """Injects forward annotations and eliminates duplicate class re-definitions."""
+        if not file_path.endswith(".py") or not code.strip():
+            return code
+
+        current_mod = Path(file_path).stem
+        imports_to_add: dict[str, list[str]] = {}
+
+        # Strip redundant re-definitions of classes already defined upstream
+        for mod_name, symbols in upstream_exports.items():
+            if mod_name == current_mod:
+                continue
+            for sym in symbols:
+                class_pattern = rf"(?m)^class\s+{re.escape(sym)}\b[^\n]*:.*?(?=\n(?:class|def|\Z))"
+                if re.search(class_pattern, code, flags=re.DOTALL):
+                    code = re.sub(class_pattern, "", code, flags=re.DOTALL)
+                    imports_to_add.setdefault(mod_name, []).append(sym)
+                elif re.search(rf"\b{re.escape(sym)}\b", code):
+                    import_check = rf"from\s+(\.{0,2})?{re.escape(mod_name)}\s+import\s+.*\b{re.escape(sym)}\b"
+                    if not re.search(import_check, code):
+                        imports_to_add.setdefault(mod_name, []).append(sym)
+
+        import_lines = []
+        for mod, syms in imports_to_add.items():
+            unique_syms = sorted(list(set(syms)))
+            if unique_syms:
+                import_lines.append(f"from {mod} import {', '.join(unique_syms)}")
+
+        # Ensure from __future__ import annotations is at top to prevent forward reference errors
+        if "from __future__ import annotations" not in code:
+            code = "from __future__ import annotations\n" + code
+
+        if import_lines:
+            import_block = "\n".join(import_lines) + "\n"
+            parts = code.split("from __future__ import annotations\n", 1)
+            code = parts[0] + "from __future__ import annotations\n" + import_block + parts[1]
+
+        return code.strip() + "\n"
+
     def synthesize_hierarchy(
         self,
         manifest: list[FileManifestItem],
@@ -108,6 +168,7 @@ class HierarchicalPlanner:
         """Sequentially synthesizes files while propagating live interface contracts across files."""
         ordered = self.sort_manifest_by_dependency_order(manifest)
         accumulated_contracts: list[str] = []
+        upstream_exports: dict[str, list[str]] = {}
         results: list[SynthesizedFileResult] = []
 
         total_files = len(ordered)
@@ -115,18 +176,29 @@ class HierarchicalPlanner:
             if on_file_progress:
                 on_file_progress(item.file_path, idx, total_files)
 
-            # Build enriched goal with upstream contracts
+            # Build enriched goal with upstream contracts and mandatory imports
             enriched_goal = user_goal
-            if accumulated_contracts:
-                contracts_summary = "\n".join(accumulated_contracts[-4:])
+            if upstream_exports:
+                import_statements = []
+                for mod, syms in upstream_exports.items():
+                    import_statements.append(f"from {mod} import {', '.join(syms)}")
+                
                 enriched_goal += (
-                    f"\n\n=== UPSTREAM CONTRACTS (Already Synthesized & Frozen) ===\n"
-                    f"{contracts_summary}\n"
-                    f"CRITICAL: Match the exact class names, methods, and field names defined above."
+                    f"\n\n=== UPSTREAM CONTRACTS & MANDATORY IMPORTS ===\n"
+                    f"The following symbols are ALREADY IMPLEMENTED in upstream project files:\n"
+                    + "\n".join(f"- {stmt}" for stmt in import_statements)
+                    + f"\nCRITICAL: DO NOT redefine these classes. Import and use them directly."
                 )
 
+            if accumulated_contracts:
+                contracts_summary = "\n".join(accumulated_contracts[-3:])
+                enriched_goal += f"\n\nContract Signatures:\n{contracts_summary}"
+
             # Synthesize single file
-            code = self.synthesizer.synthesize_file(item, enriched_goal)
+            raw_code = self.synthesizer.synthesize_file(item, enriched_goal)
+
+            # Post-process to ensure clean imports and forward reference protection
+            code = self.post_process_python_code(item.file_path, raw_code, upstream_exports)
 
             # Validate with CompilerGate
             diag = self.compiler_gate.check_file_content(item.file_path, code)
@@ -134,8 +206,13 @@ class HierarchicalPlanner:
             # Stage to workspace
             self.workspace.stage_edit(item.file_path, code)
 
-            # Extract contracts to propagate to downstream files
+            # Extract contracts and exported symbols to propagate downstream
             extracted = self.extract_ast_contracts(item.file_path, code)
+            symbols = self.extract_exported_symbols(item.file_path, code)
+            if symbols:
+                mod_name = Path(item.file_path).stem
+                upstream_exports[mod_name] = symbols
+
             if extracted:
                 accumulated_contracts.append(f"--- File: {item.file_path} ---\n{extracted}")
 

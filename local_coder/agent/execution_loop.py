@@ -48,8 +48,8 @@ class AgentExecutionLoop:
             status=TaskStatus.IN_PROGRESS,
         )
 
-        # Step 1: Formulate checklist plan
-        session.plan_checklist = self.planner.create_plan(user_goal)
+        # Step 1: Formulate checklist plan with repository awareness
+        session.plan_checklist = self.planner.create_plan(user_goal, repo_summary=rules_context)
 
         # Step 2: Begin ReAct execution loop
         step_idx = 0

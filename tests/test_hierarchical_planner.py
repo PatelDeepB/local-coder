@@ -83,3 +83,58 @@ def test_should_propagate_contracts_through_hierarchy(tmp_path: Path) -> None:
     second_call_goal = synth.synthesize_file.call_args_list[1][0][1]
     assert "=== UPSTREAM CONTRACTS" in second_call_goal
     assert "class Order:" in second_call_goal
+
+
+def test_should_deduplicate_classes_and_bind_imports_in_post_processing(tmp_path: Path) -> None:
+    # Arrange
+    workspace = ShadowWorkspace(tmp_path)
+    synth = MagicMock()
+    planner = HierarchicalPlanner(synthesizer=synth, workspace=workspace)
+
+    # Downstream file redefines Order instead of importing
+    raw_downstream_code = (
+        "class Order:\n"
+        "    pass\n\n"
+        "def render_order(order: Order) -> None:\n"
+        "    pass\n"
+    )
+    upstream_exports = {"models": ["Order"]}
+
+    # Act
+    processed = planner.post_process_python_code(
+        file_path="views.py",
+        code=raw_downstream_code,
+        upstream_exports=upstream_exports,
+    )
+
+    # Assert
+    assert "from __future__ import annotations" in processed
+    assert "from models import Order" in processed
+    # Duplicate class definition should be removed
+    assert "class Order:" not in processed
+    assert "def render_order(order: Order) -> None:" in processed
+
+
+def test_should_inject_future_annotations_to_prevent_forward_reference_error(tmp_path: Path) -> None:
+    # Arrange
+    workspace = ShadowWorkspace(tmp_path)
+    synth = MagicMock()
+    planner = HierarchicalPlanner(synthesizer=synth, workspace=workspace)
+
+    raw_code = (
+        "class WorkerPool:\n"
+        "    def add_worker(self, worker: Worker) -> None:\n"
+        "        pass\n\n"
+        "class Worker:\n"
+        "    pass\n"
+    )
+
+    # Act
+    processed = planner.post_process_python_code(
+        file_path="worker_pool.py",
+        code=raw_code,
+        upstream_exports={},
+    )
+
+    # Assert
+    assert processed.startswith("from __future__ import annotations\n")

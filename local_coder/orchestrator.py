@@ -178,7 +178,26 @@ class LocalCoderOrchestrator:
             session.status = TaskStatus.COMPLETED
             session.final_output = f"Successfully generated full project ({len(manifest_files)} files): {', '.join(manifest_files)}"
         else:
-            session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=rules)
+            existing_files = [
+                str(p.relative_to(self.root_dir)).replace("\\", "/")
+                for p in self.root_dir.glob("**/*")
+                if p.is_file()
+                and not any(
+                    part.startswith(".")
+                    or part in ["venv", "__pycache__", "node_modules", "workspace_runs"]
+                    for part in p.parts
+                )
+            ]
+            repo_inv = "Existing Project Files:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
+            mod_rules = (
+                f"{repo_inv}\n\n"
+                f"CRITICAL RULES FOR MODIFICATIONS:\n"
+                f"1. When modifying existing files, edit them at their exact paths in-place.\n"
+                f"2. DO NOT create duplicate files in other subdirectories.\n"
+                f"3. Preserve all existing classes and methods, adding or updating only the requested functionality."
+            )
+            full_rules = f"{rules}\n\n{mod_rules}" if rules else mod_rules
+            session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=full_rules)
 
         # Step 2: Create physical directory on disk for this run
         run_dir = (

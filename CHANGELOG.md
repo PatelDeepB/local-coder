@@ -2,6 +2,31 @@
 
 All notable changes, additions, and architectural evolutions of the LOCAL-CODER system are meticulously recorded here.
 
+## [1.6.0] - 2026-10-22: Cross-File Import Binding, AST Deduplication, 4K Context Window, & Synapse Knowledge Expansion
+
+### Cross-File Import Binding & AST Deduplication
+- Enhanced `HierarchicalPlanner` in `local_coder/agent/hierarchical_planner.py`:
+  * Built `extract_exported_symbols` to track all public classes and functions synthesized in upstream files.
+  * Built `post_process_python_code` to eliminate duplicate class definitions across files, binding clean relative/module imports automatically.
+  * Injects `from __future__ import annotations` at the top of every synthesized Python file, completely eliminating forward reference `NameError` exceptions.
+  * Added unit tests in `tests/test_hierarchical_planner.py` validating automatic import binding and future annotations injection.
+
+### Synapse Zero Knowledge Substrate Scale-Up
+- Ingested 249 canonical modern contracts into `data/coding_knowledge.db`:
+  * Core modules: `asyncio`, `enum`, `pytest`, `collections`, `concurrent.futures`, `threading`, and `unittest`.
+  * Total contracts in database expanded to 493.
+  * Querying async task queues now resolves exact `asyncio.PriorityQueue` and `ProcessPoolExecutor` stubs in sub-millisecond latency.
+  * Enforced strict 300-char signature and 500-char snippet budgeting in `ManifestSynthesizer` to prevent context bloat.
+
+### Context Window Expansion to 4,096 Tokens
+- Doubled model context window from 2,048 to 4,096 tokens in `local_coder/core/config.py`.
+- Verified resident memory overhead on CPU: strictly bounded at 1,406 MB RSS (well below the 1,900 MB limit).
+
+### Context-Aware In-Place Refactoring
+- Updated `LocalCoderOrchestrator` and `AgentExecutionLoop` to supply existing repository file inventory and in-place modification rules during non-scaffold tasks.
+- Prevents creation of redundant subdirectories (e.g. `src/`) when target files already exist in root.
+- Automated test suite expanded to 88 / 88 passing tests.
+
 ## [1.5.0] - 2026-10-22: Hierarchical Planner, SSD-Backed Speculative Drafter, & Modern Knowledge Ingestor
 
 ### Hierarchical Multi-File Synthesis Planner

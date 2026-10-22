@@ -521,7 +521,11 @@ class CleanPatternBank:
         max_hits = 0
 
         for pattern in self._patterns:
-            hits = sum(1 for kw in pattern.keywords if kw in lower_goal)
+            hits = sum(
+                1
+                for kw in pattern.keywords
+                if re.search(r"\b" + re.escape(kw) + r"\b", lower_goal)
+            )
             if hits > max_hits:
                 max_hits = hits
                 best_match = pattern

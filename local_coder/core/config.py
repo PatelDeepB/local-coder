@@ -24,7 +24,7 @@ class LocalCoderConfig:
         Path(__file__).resolve().parent.parent.parent / "models"
     )
     max_rss_mb: float = 1900.0  # Strict safe ceiling under 2.0 GB RAM limit
-    context_window_size: int = 2048
+    context_window_size: int = 4096
     prompt_batch_size: int = 256
     terminal_timeout_seconds: float = 30.0
     enable_flash_attention: bool = False
