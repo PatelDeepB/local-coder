@@ -61,16 +61,25 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
     if m_xml_patch:
         patch_path = m_xml_patch.group(1).strip().strip("`'\" ")
         patch_body = m_xml_patch.group(2)
-        m_hunk = re.search(r'<{5,9}\s*SEARCH[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)', patch_body, flags=re.DOTALL)
+        m_hunk = re.search(
+            r'<{5,9}\s*(?:SEARCH|HEAD|ORIGINAL|BEFORE)?[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
+            patch_body,
+            flags=re.DOTALL,
+        )
         if m_hunk:
             return "apply_search_replace_patch", {
                 "file_path": patch_path,
                 "search_block": m_hunk.group(1),
                 "replace_block": m_hunk.group(2),
             }
+        clean_patch_code = patch_body.strip()
+        clean_patch_code = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", clean_patch_code)
+        clean_patch_code = re.sub(r"\n```$", "", clean_patch_code)
+        if clean_patch_code:
+            return "write_file", {"file_path": patch_path, "content": clean_patch_code}
 
     m_patch = re.search(
-        r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*SEARCH[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
+        r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*(?:SEARCH|HEAD|ORIGINAL|BEFORE)?[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
         clean,
         flags=re.DOTALL,
     )
@@ -83,6 +92,17 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
             "search_block": search_block,
             "replace_block": replace_block,
         }
+
+    # Format 5: Markdown code block with embedded filepath comment
+    m_comment_file = re.search(
+        r'```(?:[a-zA-Z0-9_-]+)?[\r\n]+(?:#|//)\s*(?:filepath:|file:|path:)?\s*([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)[\r\n](.*?)```',
+        clean,
+        flags=re.DOTALL,
+    )
+    if m_comment_file:
+        file_path = m_comment_file.group(1).strip()
+        code_content = m_comment_file.group(2).strip()
+        return "write_file", {"file_path": file_path, "content": code_content}
 
     # Pattern 1: Markdown json block
     md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, flags=re.DOTALL)

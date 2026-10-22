@@ -104,3 +104,45 @@ def test_should_parse_search_replace_patch_hunk_format() -> None:
     assert args.get("file_path") == "aggregator.py"
     assert "def __init__(self, window_size):" in args.get("search_block", "")
     assert "def __init__(self, window_size=10, filter_tags=None):" in args.get("replace_block", "")
+
+
+def test_should_parse_git_head_style_patch_hunk_format() -> None:
+    # Arrange
+    raw_text = (
+        '<patch file="views.py">\n'
+        '<<<<<<< HEAD\n'
+        'def old_calc():\n'
+        '    return 1\n'
+        '=======\n'
+        'def calculate_force(mass: float, acceleration: float) -> float:\n'
+        '    return mass * acceleration\n'
+        '>>>>>>> HEAD\n'
+        '</patch>'
+    )
+
+    # Act
+    tool, args = parse_tool_call_json(raw_text)
+
+    # Assert
+    assert tool == "apply_search_replace_patch"
+    assert args.get("file_path") == "views.py"
+    assert "def old_calc():" in args.get("search_block", "")
+    assert "def calculate_force" in args.get("replace_block", "")
+
+
+def test_should_parse_patch_without_hunk_markers_as_write_file() -> None:
+    # Arrange
+    raw_text = (
+        '<patch file="models.py">\n'
+        'def calculate_force(mass: float, acceleration: float) -> float:\n'
+        '    return mass * acceleration\n'
+        '</patch>'
+    )
+
+    # Act
+    tool, args = parse_tool_call_json(raw_text)
+
+    # Assert
+    assert tool == "write_file"
+    assert args.get("file_path") == "models.py"
+    assert "def calculate_force" in args.get("content", "")

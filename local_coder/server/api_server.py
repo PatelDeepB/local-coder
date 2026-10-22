@@ -51,6 +51,7 @@ class OpenAIChatResponse(BaseModel):
 
 class TaskRequest(BaseModel):
     goal: str
+    output_directory: Optional[str] = None
 
 
 class TerminalRequest(BaseModel):
@@ -170,7 +171,10 @@ async def execute_task(req: TaskRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
 
     try:
-        session = orchestrator_instance.run_coding_task(req.goal)
+        session = orchestrator_instance.run_coding_task(
+            user_goal=req.goal,
+            output_directory=req.output_directory
+        )
     except Exception as exc:
         import traceback
         traceback.print_exc()

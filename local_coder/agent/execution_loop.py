@@ -81,15 +81,27 @@ class AgentExecutionLoop:
             # If no tool is called or model outputs a conclusion directly
             if not tool_name or tool_name not in self.tools:
                 # Syntax Guard: Model attempted a tool call with malformed formatting
-                if any(k in raw_output for k in ["write_file", "<write_file", '{"tool":', "'tool':"]):
+                tool_markers = ["write_file", "<write_file", "<patch", "patch file=", '{"tool":', "'tool':", "<<<<<<<", "======="]
+                if any(k in raw_output for k in tool_markers):
                     conversation_history.append(
                         f"Step {step_idx} Format Notice: Your tool call format had a syntax issue. "
-                        "To write a file, use format:\n<write_file path=\"path/to/file\">\ncode here\n</write_file>"
+                        "To write or update a file, you MUST use format:\n"
+                        "<write_file path=\"path/to/file\">\ncode here\n</write_file>\n"
+                        "OR:\n<patch file=\"path/to/file\">\n<<<<<<< SEARCH\noriginal code\n=======\nreplacement code\n>>>>>>>\n</patch>"
+                    )
+                    continue
+
+                # Zero-Work Guard: Prevent concluding before writing or editing any code
+                completed_count = len(session.completed_steps)
+                if completed_count == 0 and step_idx < 3:
+                    conversation_history.append(
+                        f"Step {step_idx} Action Required: You have not created or modified any files yet! "
+                        "Do NOT output a summary without applying changes. You MUST write or patch the file now using:\n"
+                        "<write_file path=\"path/to/file\">\ncomplete updated code\n</write_file>"
                     )
                     continue
 
                 # Progress Guard: Model prematurely stopped before completing multi-file plan
-                completed_count = len(session.completed_steps)
                 if completed_count <= 1 and len(session.plan_checklist) >= 3 and step_idx < 4:
                     conversation_history.append(
                         f"Step {step_idx} Plan Notice: You have only created {completed_count} file(s). "

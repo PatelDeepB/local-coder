@@ -144,7 +144,11 @@ class LocalCoderComposerViewProvider {
             if (this._view) this._view.webview.postMessage({ type: 'taskStarted' });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'running');
 
-            const res = await sendPostRequest(`${baseUrl}/api/v1/task`, { goal: enrichedGoal }, 300000, controller.signal);
+            const payload = {
+                goal: enrichedGoal,
+                output_directory: wsRoot || undefined,
+            };
+            const res = await sendPostRequest(`${baseUrl}/api/v1/task`, payload, 300000, controller.signal);
             this._taskState.status = 'completed';
             this._taskState.result = res;
             if (this._view) this._view.webview.postMessage({ type: 'taskComplete', result: res });
