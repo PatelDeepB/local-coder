@@ -20,7 +20,7 @@ function getBackendState() {
     };
 }
 
-function sendPostRequest(targetUrl, payload, timeoutMs = 60000) {
+function sendPostRequest(targetUrl, payload, timeoutMs = 60000, abortSignal = null) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(targetUrl);
         const data = JSON.stringify(payload);
@@ -52,6 +52,13 @@ function sendPostRequest(targetUrl, payload, timeoutMs = 60000) {
                 }
             });
         });
+
+        if (abortSignal) {
+            abortSignal.addEventListener('abort', () => {
+                req.destroy();
+                reject(new Error('Task execution aborted by user'));
+            });
+        }
 
         req.on('error', reject);
         req.on('timeout', () => {
@@ -107,14 +114,14 @@ async function getActiveBaseUrl() {
     const config = vscode.workspace.getConfiguration('localCoder');
     const configured = config.get('apiUrl') || 'http://127.0.0.1:8080';
     try {
-        await sendGetRequest(`${configured}/health`, 800);
+        await sendGetRequest(`${configured}/health`, 2500);
         cachedActiveUrl = configured;
         isBackendOnline = true;
         return configured;
     } catch {
         const altUrl = configured.includes('8080') ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:8080';
         try {
-            await sendGetRequest(`${altUrl}/health`, 800);
+            await sendGetRequest(`${altUrl}/health`, 2500);
             cachedActiveUrl = altUrl;
             isBackendOnline = true;
             return altUrl;

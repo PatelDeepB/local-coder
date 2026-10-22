@@ -110,17 +110,30 @@ class LocalCoderComposerViewProvider {
             }
         }
 
+        const controller = new AbortController();
+        this._activeAbortController = controller;
+
         try {
             if (this._view) this._view.webview.postMessage({ type: 'taskStarted' });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'running');
 
-            const res = await sendPostRequest(`${baseUrl}/api/v1/task`, { goal: enrichedGoal }, 120000);
+            const res = await sendPostRequest(`${baseUrl}/api/v1/task`, { goal: enrichedGoal }, 300000, controller.signal);
             if (this._view) this._view.webview.postMessage({ type: 'taskComplete', result: res });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'completed');
             await this._handleLoadStaged(baseUrl);
         } catch (err) {
-            if (this._view) this._view.webview.postMessage({ type: 'taskError', error: err.message });
+            if (err.message && err.message.includes('ECONNREFUSED')) {
+                vscode.commands.executeCommand('local-coder.startDaemon');
+                if (this._view) this._view.webview.postMessage({
+                    type: 'taskError',
+                    error: 'Local Coder daemon was offline. Automatically launched daemon on port 8080. Please retry in 5 seconds.'
+                });
+            } else {
+                if (this._view) this._view.webview.postMessage({ type: 'taskError', error: err.message });
+            }
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'error');
+        } finally {
+            this._activeAbortController = null;
         }
     }
 

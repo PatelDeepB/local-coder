@@ -57,7 +57,10 @@ function getComposerScripts() {
         function triggerExecute() {
             if (isExecuting) return;
             const goal = goalInput.value.trim();
-            if (!goal) return;
+            if (!goal) {
+                goalInput.focus();
+                return;
+            }
             setLockedState(true);
             statusBox.className = 'status-box';
             statusBox.style.display = 'block';
@@ -77,7 +80,10 @@ function getComposerScripts() {
         });
 
         goalInput.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                triggerExecute();
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
                 triggerExecute();
             } else if (e.key === 'Escape') {
