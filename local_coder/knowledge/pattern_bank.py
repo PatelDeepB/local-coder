@@ -510,6 +510,10 @@ class CleanPatternBank:
     def __init__(self) -> None:
         self._patterns = [REACT_DASHBOARD_PATTERN, FASTAPI_REST_PATTERN, DJANGO_CRUD_PATTERN, CLI_DATA_ANALYSIS_PATTERN]
 
+    def get_all_patterns(self) -> list[ArchitecturalPattern]:
+        """Returns all registered architectural patterns."""
+        return list(self._patterns)
+
     def match_pattern(self, goal: str) -> Optional[ArchitecturalPattern]:
         """Finds matching architectural pattern for user goal."""
         lower_goal = goal.lower()

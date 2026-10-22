@@ -13,6 +13,8 @@ from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
 from local_coder.core.memory_guard import MemoryGuard
+from local_coder.knowledge.dependency_graph import CodebaseDependencyGraph
+from local_coder.knowledge.file_watcher import IncrementalFileWatcher
 from local_coder.knowledge.hdc_code_index import HDCCodeIndex
 from local_coder.knowledge.mmap_symbol_graph import MmapSymbolGraph
 from local_coder.memory.episodic_ring import EpisodicRollingHashRing
@@ -29,6 +31,7 @@ from local_coder.tools.file_tools import (
 from local_coder.tools.patch_tools import ApplySearchReplacePatchTool, LibCSTTransformTool
 from local_coder.tools.search_tools import LookupSymbolTool, SearchCodeTool
 from local_coder.tools.terminal_tools import RunTerminalCommandTool
+from local_coder.tools.test_tools import RunAutonomousTestRepairTool
 from local_coder.verifier.repair_loop import MicroRepairLoop
 from local_coder.verifier.syntax_validator import SyntaxValidator
 from local_coder.verifier.test_runner import TestRunner
@@ -65,6 +68,12 @@ class LocalCoderOrchestrator:
         self.symbol_graph = MmapSymbolGraph(graph_file)
         self.episodic_ring = EpisodicRollingHashRing(ring_capacity=5)
         self.tree_indexer = TreeIndexer(self.hdc_index, self.symbol_graph)
+        self.dependency_graph = CodebaseDependencyGraph(self.root_dir)
+        self.file_watcher = IncrementalFileWatcher(
+            root_dir=self.root_dir,
+            tree_indexer=self.tree_indexer,
+            dependency_graph=self.dependency_graph,
+        )
 
         # Neural Engine
         self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
@@ -89,6 +98,7 @@ class LocalCoderOrchestrator:
             ApplySearchReplacePatchTool(self.shadow_workspace),
             LibCSTTransformTool(self.shadow_workspace),
             RunTerminalCommandTool(self.terminal_runner),
+            RunAutonomousTestRepairTool(self.runner, self.shadow_workspace, self.terminal_runner),
         ]
 
         # Agent Loop & Manifest Synthesizer
@@ -213,6 +223,8 @@ class LocalCoderOrchestrator:
 
     def close(self) -> None:
         """Closes memory-mapped graph and frees neural engine resources."""
+        if hasattr(self, "file_watcher") and self.file_watcher is not None:
+            self.file_watcher.stop()
         if hasattr(self, "symbol_graph") and self.symbol_graph is not None:
             self.symbol_graph.close()
         if hasattr(self, "runner") and self.runner is not None:

@@ -2,7 +2,7 @@
   "name": "local-coder-vscode",
   "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
   "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "pateldeep",
   "repository": {
     "type": "git",
@@ -26,6 +26,7 @@
     "onCommand:local-coder.switchProvider",
     "onCommand:local-coder.commitChanges",
     "onCommand:local-coder.rollbackChanges",
+    "onCommand:local-coder.testAndRepair",
     "onView:local-coder.chatView"
   ],
   "main": "./extension.js",
@@ -70,6 +71,11 @@
         "command": "local-coder.rollbackChanges",
         "category": "Local Coder",
         "title": "Rollback Staged Edits"
+      },
+      {
+        "command": "local-coder.testAndRepair",
+        "category": "Local Coder",
+        "title": "Autonomous Test & Repair Loop"
       }
     ],
     "keybindings": [
@@ -165,6 +171,11 @@
           "enum": ["local", "ollama", "openai", "hybrid"],
           "default": "local",
           "description": "Active intelligence backend tier."
+        },
+        "localCoder.enableAutocomplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time predictive tab autocomplete (FIM speculative infilling)."
         }
       }
     }

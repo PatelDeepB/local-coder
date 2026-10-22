@@ -221,6 +221,83 @@ function activate(context) {
         }
     });
 
+    // Register Autonomous Test and Repair Loop
+    const testAndRepairCmd = vscode.commands.registerCommand('local-coder.testAndRepair', async () => {
+        const testPath = await vscode.window.showInputBox({
+            prompt: 'Test path or directory to run and repair:',
+            value: 'tests'
+        });
+        if (!testPath) {
+            return;
+        }
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Local Coder: Executing autonomous test-repair loop...',
+            cancellable: false
+        }, async () => {
+            const activeUrl = await getActiveBaseUrl();
+            try {
+                const res = await sendPostRequest(`${activeUrl}/api/v1/test-and-repair`, {
+                    test_path: testPath,
+                    max_iterations: 3
+                });
+                if (res.is_successful) {
+                    vscode.window.showInformationMessage(`All tests PASSED (${res.passed_count} passed, ${res.iterations_used} iterations)!`);
+                } else {
+                    vscode.window.showWarningMessage(`Test repair ended: ${res.passed_count} passed, ${res.failed_count} failed.`);
+                }
+            } catch (err) {
+                vscode.window.showErrorMessage(`Test-repair loop failed: ${err.message}`);
+            }
+        });
+    });
+
+    // Register Predictive Tab Autocomplete (Copilot++ Speculative Infilling)
+    const inlineCompletionProvider = {
+        async provideInlineCompletionItems(document, position, context, token) {
+            const config = vscode.workspace.getConfiguration('localCoder');
+            const autocompleteEnabled = config.get('enableAutocomplete', true);
+            if (!autocompleteEnabled) {
+                return { items: [] };
+            }
+
+            const lineText = document.lineAt(position.line).text;
+            const linePrefix = lineText.substring(0, position.character);
+            if (!linePrefix.trim()) {
+                return { items: [] };
+            }
+
+            try {
+                const textBefore = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
+                const textAfter = document.getText(new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end));
+                const activeUrl = await getActiveBaseUrl();
+
+                const payload = {
+                    prefix: textBefore.slice(-1000),
+                    suffix: textAfter.slice(0, 500),
+                    max_tokens: 32,
+                    single_line_only: true
+                };
+
+                const res = await sendPostRequest(`${activeUrl}/api/v1/autocomplete`, payload);
+                if (token.isCancellationRequested || !res || !res.completion) {
+                    return { items: [] };
+                }
+
+                const item = new vscode.InlineCompletionItem(res.completion, new vscode.Range(position, position));
+                return { items: [item] };
+            } catch {
+                return { items: [] };
+            }
+        }
+    };
+
+    const autocompleteDisposable = vscode.languages.registerInlineCompletionItemProvider(
+        { pattern: '**' },
+        inlineCompletionProvider
+    );
+
     context.subscriptions.push(
         inlineEditCmd,
         acceptDiffCmd,
@@ -229,7 +306,9 @@ function activate(context) {
         switchProviderCmd,
         openComposerCmd,
         commitCmd,
-        rollbackCmd
+        rollbackCmd,
+        testAndRepairCmd,
+        autocompleteDisposable
     );
 }
 

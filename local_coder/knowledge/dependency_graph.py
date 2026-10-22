@@ -44,6 +44,29 @@ class CodebaseDependencyGraph:
 
         return edge_count
 
+    def update_file(self, file_path: str | Path) -> int:
+        """Incrementally re-indexes imports for a modified or newly created file."""
+        abs_p = (self.root_dir / file_path).resolve() if not Path(file_path).is_absolute() else Path(file_path).resolve()
+        try:
+            rel_path = str(abs_p.relative_to(self.root_dir)).replace("\\", "/")
+        except ValueError:
+            return 0
+
+        old_targets = self._imports.pop(rel_path, set())
+        for tgt in old_targets:
+            if tgt in self._imported_by:
+                self._imported_by[tgt].discard(rel_path)
+
+        self._contracts_cache.pop(rel_path, None)
+        if not abs_p.is_file() or abs_p.suffix not in (".py", ".js", ".jsx", ".ts", ".tsx"):
+            return 0
+
+        edges = self._extract_file_imports(abs_p, rel_path)
+        for edge in edges:
+            self._imports.setdefault(edge.source_file, set()).add(edge.target_file)
+            self._imported_by.setdefault(edge.target_file, set()).add(edge.source_file)
+        return len(edges)
+
     def _extract_file_imports(self, abs_path: Path, rel_source: str) -> list[DependencyEdge]:
         """Extracts import targets from a single source file."""
         try:

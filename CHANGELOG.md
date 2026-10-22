@@ -2,6 +2,50 @@
 
 All notable changes, additions, and architectural evolutions of the LOCAL-CODER system are meticulously recorded here.
 
+## [1.3.0] - 2026-10-22: Tab Autocomplete, Synapse Training Pipeline, Incremental Watcher, & Autonomous Test-Repair Loop
+
+### Step 1: Real-Time Predictive Tab Autocomplete (Copilot++ Speculative Infilling)
+- Built `InfillingEngine` in `local_coder/neural/infilling_engine.py`:
+  * Formats Qwen FIM prompt tokens (`<|fim_prefix|>...<|fim_suffix|>...<|fim_middle|>`).
+  * Trims recent context window for sub-second speculative completion.
+  * Strips special tokens and cleans markdown fence artifacts.
+- Added `generate_raw` method to `LlamaModelRunner` and `ModelRouter`:
+  * Skips chat templates and generates raw completions directly from prompt.
+- Added `/api/v1/autocomplete` endpoint in `local_coder/server/api_server.py`.
+- Integrated `vscode.languages.registerInlineCompletionItemProvider` in `vscode-extension/extension.js`:
+  * Provides ghost text suggestions inline as the user types; accepts on Tab.
+  * Added `localCoder.enableAutocomplete` configuration toggle in `vscode-extension/package.json`.
+- Packaged and installed `local-coder-vscode-1.0.2.vsix`.
+
+### Step 2: Clean Dataset & Synapse LoRA Training Pipeline
+- Built `SynapseDatasetBuilder` in `local_coder/training/dataset_builder.py`:
+  * Synthesizes high-density instruction pairs from `CleanPatternBank`.
+  * Generates FIM training samples using natural function and module slicing.
+  * Serializes samples to standard JSON Lines format (`data/synapse_instructions.jsonl`).
+- Created `scripts/train_lora.py`:
+  * Lightweight PEFT/LoRA fine-tuning script for Qwen2.5-Coder (0.5B / 1.5B) base weights.
+  * Supports ChatML format, target projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), rank r=16, alpha=32.
+  * Added `--dry-run` flag for data and pipeline verification without GPU hardware.
+
+### Step 3: Incremental File Watcher Daemon
+- Created `IncrementalFileWatcher` in `local_coder/knowledge/file_watcher.py`:
+  * Observes workspace code changes via timestamp polling with negligible CPU overhead.
+  * Incrementally re-indexes single modified files into `HDCCodeIndex` and `CodebaseDependencyGraph` in sub-2ms without full codebase rescanning.
+  * Provides background thread management (`start_background_watcher`, `stop`).
+- Added `reindex_file` to `TreeIndexer` and `remove_file` to `HDCCodeIndex`.
+- Added `update_file` to `CodebaseDependencyGraph` for instant edge recalculation.
+- Wired `IncrementalFileWatcher` into `LocalCoderOrchestrator` lifecycle.
+
+### Step 4: Autonomous Terminal Test-Repair Loop
+- Created `AutonomousTestHealer` in `local_coder/agent/autonomous_test_healer.py`:
+  * Runs test suite via `TerminalRunner` and `TestRunner`.
+  * On test failure, detects offending source file from tracebacks, extracts error diagnostic, and synthesizes targeted fixes.
+  * Iteratively applies changes and re-runs tests until 100% pass or max iterations reached.
+- Added `/api/v1/test-and-repair` endpoint in `local_coder/server/api_server.py`.
+- Built `RunAutonomousTestRepairTool` in `local_coder/tools/test_tools.py` and registered with agent loop.
+- Added `local-coder.testAndRepair` command to VS Code extension and command palette.
+- Expanded automated test suite from 59 to 74 passing tests.
+
 ## [1.2.3] - 2026-10-21: 4-Task Complex Benchmark & Typing Auto-Healing
 
 ### Comprehensive Documentation & Pattern Expansion

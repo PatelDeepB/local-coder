@@ -87,6 +87,14 @@ class TreeIndexer:
 
         return len(symbols)
 
+    def reindex_file(self, file_path: Path, root_path: Path) -> int:
+        """Incrementally removes old symbols and re-indexes a single file."""
+        rel_path = str(file_path.relative_to(root_path)).replace("\\", "/")
+        self.hdc_index.remove_file(rel_path)
+        if not file_path.exists():
+            return 0
+        return self.index_file(file_path, root_path)
+
     def format_interface_contracts(self, symbols_or_files: list[str]) -> str:
         """Formats high-density interface signatures for prompt context injection."""
         lines = ["[Indexed Codebase Contracts]:"]

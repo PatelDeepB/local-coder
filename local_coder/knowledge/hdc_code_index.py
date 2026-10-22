@@ -64,6 +64,27 @@ class HDCCodeIndex:
         else:
             self._matrix = np.vstack([self._matrix, row])
 
+    def remove_file(self, file_path: str) -> int:
+        """Removes all symbols belonging to a specific file path from the index."""
+        if not self._symbols or self._matrix is None:
+            return 0
+
+        keep_indices = [
+            i for i, s in enumerate(self._symbols) if s["file_path"] != file_path
+        ]
+        removed_count = len(self._symbols) - len(keep_indices)
+        if removed_count == 0:
+            return 0
+
+        if len(keep_indices) == 0:
+            self._symbols = []
+            self._matrix = None
+            return removed_count
+
+        self._symbols = [self._symbols[i] for i in keep_indices]
+        self._matrix = self._matrix[keep_indices]
+        return removed_count
+
     def search(self, query: str, limit: int = 5) -> list[CodeSearchHit]:
         """Searches index using single matrix dot product (sub-millisecond)."""
         if self._matrix is None or len(self._symbols) == 0:

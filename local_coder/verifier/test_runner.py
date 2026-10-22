@@ -13,6 +13,7 @@ from local_coder.workspace.terminal_runner import TerminalRunner
 class TestExecutionOutcome:
     """Outcome of a test suite run."""
 
+    __test__ = False
     is_all_passed: bool
     passed_count: int
     failed_count: int
@@ -22,6 +23,8 @@ class TestExecutionOutcome:
 
 class TestRunner:
     """Runs pytest on test files or directories and parses test outcomes."""
+
+    __test__ = False
 
     def __init__(self, terminal: TerminalRunner) -> None:
         self.terminal = terminal

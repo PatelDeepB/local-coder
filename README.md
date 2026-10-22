@@ -5,7 +5,7 @@ An autonomous, production-grade coding copilot engineered to deliver the develop
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![VS Code Extension](https://img.shields.io/badge/vscode-extension-green.svg)](vscode-extension/)
-[![Tests Passing](https://img.shields.io/badge/tests-59%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-74%20passed-brightgreen.svg)](tests/)
 [![RAM Ceiling](https://img.shields.io/badge/RAM%20Ceiling-%3C%3D%201900%20MB-orange.svg)](#memory-guard)
 
 ---
@@ -14,8 +14,10 @@ An autonomous, production-grade coding copilot engineered to deliver the develop
 
 1. **Native VS Code Extension (`local-coder-vscode`)**:
    - **Inline Edit (`Ctrl+I` / `Alt+K` / `Ctrl+K`)**: Select any code or place your cursor on a line, provide instructions, and review live red/green diff decorations directly in the buffer.
+   - **Real-Time Predictive Tab Autocomplete (Copilot++)**: Inline ghost text infilling using Qwen FIM tokens ahead of cursor; press Tab to accept.
    - **Keyboard Shortcuts**: `Ctrl+Enter` to Accept diff, `Escape` to Reject diff.
    - **Composer Sidebar (`Ctrl+Shift+L`)**: Multi-file autonomous planning, live step-by-step progress logging, and one-click commit or rollback.
+   - **Autonomous Test & Repair (`Ctrl+Shift+T` / Palette)**: Executes terminal test suites and iteratively heals broken files until all tests pass.
    - **Auto-Fix Diagnostics**: Intercepts active red squiggles from your language server (`vscode.languages.getDiagnostics`) and feeds them into the self-repair loop.
    - **Editor Context Menu**: Right-click on any code and select "Local Coder: Inline Edit".
 
@@ -51,6 +53,13 @@ An autonomous, production-grade coding copilot engineered to deliver the develop
 8. **Deterministic LibCST Surgeries & Shadow Workspace**:
    - LibCST transformers for function body replacement, error wrapping, and async transformation in under 6 milliseconds.
    - In-memory virtual file staging prevents premature disk mutation, supporting atomic commits and instant rollback.
+
+9. **Incremental File Watcher Daemon (`IncrementalFileWatcher`)**:
+   - Monitors filesystem events and performs sub-2ms single-file incremental symbol and dependency re-indexing without full project rescanning.
+
+10. **Synapse Dataset Builder & LoRA Fine-Tuning (`SynapseDatasetBuilder`)**:
+    - Synthesizes high-density instruction and FIM training datasets from verified architectural patterns.
+    - Automated PEFT/LoRA fine-tuning script (`scripts/train_lora.py`) targeting Qwen2.5-Coder base models.
 
 ---
 

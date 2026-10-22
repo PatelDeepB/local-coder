@@ -131,6 +131,52 @@ class LlamaModelRunner:
             peak_rss_mb=self.memory_guard.get_resident_memory_mb(),
         )
 
+    def generate_raw(
+        self,
+        prompt: str,
+        max_tokens: int = 32,
+        temperature: float = 0.1,
+        stop_tokens: Optional[list[str]] = None,
+    ) -> GenerationResult:
+        """Executes raw completion without chat formatting, ideal for FIM tab autocompletion."""
+        self.memory_guard.assert_within_budget()
+        start_time = time.perf_counter()
+        stops = stop_tokens or ["<|fim_pad|>", "<|endoftext|>", "\n\n", "<|file_sep|>"]
+
+        if self._is_mock or self._llm is None:
+            time.sleep(0.005)
+            mock_text = " = True"
+            elapsed = time.perf_counter() - start_time
+            return GenerationResult(
+                content=mock_text,
+                elapsed_seconds=elapsed,
+                tokens_per_second=200.0,
+                token_count=2,
+                peak_rss_mb=self.memory_guard.get_resident_memory_mb(),
+            )
+
+        output = self._llm(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=0.9,
+            repeat_penalty=1.05,
+            stop=stops,
+        )
+
+        raw_text = output["choices"][0].get("text") or ""
+        elapsed = time.perf_counter() - start_time
+        token_count = len(raw_text.split())
+        tps = token_count / elapsed if elapsed > 0 else 0.0
+
+        return GenerationResult(
+            content=raw_text,
+            elapsed_seconds=elapsed,
+            tokens_per_second=tps,
+            token_count=token_count,
+            peak_rss_mb=self.memory_guard.get_resident_memory_mb(),
+        )
+
     def stream_tokens(
         self,
         prompt: str,

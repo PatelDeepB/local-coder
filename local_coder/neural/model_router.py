@@ -73,6 +73,28 @@ class ModelRouter:
 
         return self.local_runner.generate(prompt=prompt, system_prompt=system_prompt)
 
+    def generate_raw(
+        self,
+        prompt: str,
+        max_tokens: int = 32,
+        temperature: float = 0.1,
+        stop_tokens: Optional[list[str]] = None,
+    ) -> GenerationResult:
+        """Executes raw completion without chat wrapper, delegating to local runner."""
+        if hasattr(self.local_runner, "generate_raw"):
+            return self.local_runner.generate_raw(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop_tokens=stop_tokens,
+            )
+        return self.local_runner.generate(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_tokens=stop_tokens,
+        )
+
     def stream_tokens(
         self,
         prompt: str,

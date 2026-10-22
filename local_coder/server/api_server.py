@@ -65,10 +65,23 @@ class InlineEditRequest(BaseModel):
     suffix_context: str = ""
 
 
+class AutocompleteRequest(BaseModel):
+    prefix: str
+    suffix: str = ""
+    max_tokens: int = 32
+    single_line_only: bool = True
+
+
 class DiagnosticsHealRequest(BaseModel):
     file_path: str
     content: str
     diagnostics: list[dict] = []
+
+
+class TestRepairRequest(BaseModel):
+    test_path: str = "tests"
+    target_file: Optional[str] = None
+    max_iterations: int = 3
 
 
 class ProviderChangeRequest(BaseModel):
@@ -258,6 +271,51 @@ async def inline_edit(req: InlineEditRequest) -> dict[str, Any]:
         "replacement_code": replacement,
         "diff": diff,
         "elapsed_seconds": elapsed,
+    }
+
+
+@app.post("/api/v1/autocomplete")
+async def autocomplete(req: AutocompleteRequest) -> dict[str, Any]:
+    """Generates speculative tab completion ahead of cursor."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    from local_coder.neural.infilling_engine import InfillingEngine
+    engine = InfillingEngine(orchestrator_instance.runner)
+    result = engine.complete(
+        prefix=req.prefix,
+        suffix=req.suffix,
+        max_tokens=req.max_tokens,
+        single_line_only=req.single_line_only,
+    )
+    return {
+        "completion": result.completion,
+        "elapsed_ms": result.elapsed_ms,
+        "token_count": result.token_count,
+    }
+
+
+@app.post("/api/v1/test-and-repair")
+async def test_and_repair(req: TestRepairRequest) -> dict[str, Any]:
+    """Runs test suite and autonomously heals code on failure."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+
+    from local_coder.agent.autonomous_test_healer import AutonomousTestHealer
+    healer = AutonomousTestHealer(
+        runner=orchestrator_instance.runner,
+        workspace=orchestrator_instance.shadow_workspace,
+        terminal=orchestrator_instance.terminal_runner,
+        max_iterations=req.max_iterations,
+    )
+    result = healer.run_and_repair(test_path=req.test_path, target_file=req.target_file)
+    return {
+        "is_successful": result.is_successful,
+        "iterations_used": result.iterations_used,
+        "passed_count": result.passed_count,
+        "failed_count": result.failed_count,
+        "repaired_files": result.repaired_files,
+        "final_output": result.final_output,
     }
 
 
