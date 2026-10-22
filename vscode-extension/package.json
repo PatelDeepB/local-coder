@@ -28,6 +28,7 @@
     "onCommand:local-coder.rollbackChanges",
     "onCommand:local-coder.testAndRepair",
     "onCommand:local-coder.startDaemon",
+    "onCommand:local-coder.notifyTaskState",
     "onView:local-coder.chatView"
   ],
   "main": "./extension.js",
@@ -82,6 +83,11 @@
         "command": "local-coder.startDaemon",
         "category": "Local Coder",
         "title": "Start Background Server Daemon"
+      },
+      {
+        "command": "local-coder.notifyTaskState",
+        "category": "Local Coder",
+        "title": "Notify Task Execution State"
       }
     ],
     "keybindings": [

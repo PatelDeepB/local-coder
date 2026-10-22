@@ -17,18 +17,11 @@ let activeDiffState = null;
 let statusBarItem = null;
 
 const additionDecorationType = vscode.window.createTextEditorDecorationType({
-    backgroundColor: 'rgba(34, 197, 94, 0.20)',
-    isWholeLine: true,
-    overviewRulerColor: '#22c55e',
-    overviewRulerLane: vscode.OverviewRulerLane.Left,
+    backgroundColor: 'rgba(34, 197, 94, 0.20)', isWholeLine: true, overviewRulerColor: '#22c55e',
 });
 
 const deletionDecorationType = vscode.window.createTextEditorDecorationType({
-    backgroundColor: 'rgba(239, 68, 68, 0.20)',
-    textDecoration: 'line-through',
-    isWholeLine: true,
-    overviewRulerColor: '#ef4444',
-    overviewRulerLane: vscode.OverviewRulerLane.Left,
+    backgroundColor: 'rgba(239, 68, 68, 0.20)', textDecoration: 'line-through', isWholeLine: true, overviewRulerColor: '#ef4444',
 });
 
 function activate(context) {
@@ -177,6 +170,19 @@ function activate(context) {
 
     const startDaemonCmd = vscode.commands.registerCommand('local-coder.startDaemon', () => startBackendDaemon(statusBarItem));
 
+    const notifyTaskStateCmd = vscode.commands.registerCommand('local-coder.notifyTaskState', (state) => {
+        if (!statusBarItem) return;
+        if (state === 'running') {
+            statusBarItem.text = '$(sync~spin) Local Coder: Synthesizing...';
+        } else if (state === 'completed') {
+            statusBarItem.text = '$(check) Local Coder: Done';
+            setTimeout(() => checkBackendHealth(statusBarItem), 3000);
+        } else if (state === 'error') {
+            statusBarItem.text = '$(error) Local Coder: Error';
+            setTimeout(() => checkBackendHealth(statusBarItem), 3000);
+        }
+    });
+
     // Inline Completion Provider (Tab Autocomplete)
     const inlineCompletionProvider = {
         async provideInlineCompletionItems(document, position, context, token) {
@@ -232,6 +238,7 @@ function activate(context) {
         rollbackCmd,
         testAndRepairCmd,
         startDaemonCmd,
+        notifyTaskStateCmd,
         autocompleteDisposable,
         composerDisposable
     );
