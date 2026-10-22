@@ -24,10 +24,17 @@ function getComposerScripts() {
         let timerInterval = null;
         let startTime = 0;
 
+        // Restore saved state from previous view session
+        const saved = vscode.getState() || {};
+        if (saved.goal && !goalInput.value) {
+            goalInput.value = saved.goal;
+        }
+
+        vscode.postMessage({ command: 'getTaskState' });
         vscode.postMessage({ command: 'loadWorkspaceFiles' });
         vscode.postMessage({ command: 'loadStagedFiles' });
 
-        function setLockedState(locked) {
+        function setLockedState(locked, customStart) {
             isExecuting = locked;
             goalInput.disabled = locked;
             execBtn.disabled = locked;
@@ -36,12 +43,14 @@ function getComposerScripts() {
                 execBtn.style.display = 'none';
                 stopBtn.style.display = 'inline-flex';
                 progressBar.style.display = 'block';
-                startTime = Date.now();
-                elapsedSec.innerText = '0.0';
-                timerInterval = setInterval(() => {
+                startTime = customStart || startTime || Date.now();
+                if (timerInterval) clearInterval(timerInterval);
+                const tick = () => {
                     const sec = ((Date.now() - startTime) / 1000).toFixed(1);
                     elapsedSec.innerText = sec;
-                }, 100);
+                };
+                tick();
+                timerInterval = setInterval(tick, 100);
             } else {
                 goalInput.classList.remove('locked');
                 execBtn.style.display = 'inline-flex';
@@ -64,7 +73,9 @@ function getComposerScripts() {
                 goalInput.focus();
                 return;
             }
-            setLockedState(true);
+            startTime = Date.now();
+            setLockedState(true, startTime);
+            vscode.setState({ goal: goal, isExecuting: true, startTime: startTime });
             statusBox.className = 'status-box';
             statusBox.style.display = 'block';
             statusBox.innerText = 'Agent is planning and virtualizing context...';
@@ -76,6 +87,7 @@ function getComposerScripts() {
         function triggerStop() {
             vscode.postMessage({ command: 'abortTask' });
             setLockedState(false);
+            vscode.setState({ ...(vscode.getState() || {}), isExecuting: false });
             statusBox.className = 'status-box error';
             statusBox.innerText = 'Task execution stopped by user.';
         }
@@ -99,6 +111,8 @@ function getComposerScripts() {
         });
 
         goalInput.addEventListener('input', () => {
+            vscode.setState({ ...(vscode.getState() || {}), goal: goalInput.value });
+            vscode.postMessage({ command: 'syncPrompt', goal: goalInput.value });
             const val = goalInput.value;
             const cursorPos = goalInput.selectionStart;
             const textBefore = val.slice(0, cursorPos);
@@ -141,6 +155,7 @@ function getComposerScripts() {
         };
         document.getElementById('chipClean').onclick = () => {
             goalInput.value = '';
+            vscode.setState({ ...(vscode.getState() || {}), goal: '' });
             goalInput.focus();
         };
 
@@ -149,6 +164,24 @@ function getComposerScripts() {
         document.getElementById('rollbackBtn').onclick = () => vscode.postMessage({ command: 'rollbackEdits' });
         document.getElementById('acceptAllBtn').onclick = () => vscode.postMessage({ command: 'commitEdits' });
         document.getElementById('rejectAllBtn').onclick = () => vscode.postMessage({ command: 'rollbackEdits' });
+
+        function renderTaskComplete(result) {
+            setLockedState(false);
+            vscode.setState({ ...(vscode.getState() || {}), isExecuting: false });
+            const count = result.modified_files ? result.modified_files.length : 0;
+            statusBox.className = 'status-box success';
+            statusBox.innerText = 'Completed. ' + count + ' file(s) staged for review.';
+            if (result.steps && result.steps.length > 0) {
+                stepLog.style.display = 'block';
+                stepLog.innerHTML = '';
+                result.steps.forEach(s => {
+                    const row = document.createElement('div');
+                    row.className = 'step-row';
+                    row.innerText = 'Step ' + s.step_number + ': ' + (s.thought || s.action_tool);
+                    stepLog.appendChild(row);
+                });
+            }
+        }
 
         window.addEventListener('message', (event) => {
             const msg = event.data;
@@ -163,23 +196,29 @@ function getComposerScripts() {
                 providerBadge.innerText = msg.provider;
             } else if (msg.type === 'taskStarted') {
                 setLockedState(true);
-            } else if (msg.type === 'taskComplete') {
-                setLockedState(false);
-                const count = msg.result.modified_files ? msg.result.modified_files.length : 0;
-                statusBox.className = 'status-box success';
-                statusBox.innerText = 'Completed. ' + count + ' file(s) staged for review.';
-                if (msg.result.steps) {
-                    stepLog.style.display = 'block';
-                    stepLog.innerHTML = '';
-                    msg.result.steps.forEach(s => {
-                        const row = document.createElement('div');
-                        row.className = 'step-row';
-                        row.innerText = 'Step ' + s.step_number + ': ' + (s.thought || s.action_tool);
-                        stepLog.appendChild(row);
-                    });
+            } else if (msg.type === 'taskRestoreState') {
+                const t = msg.task;
+                if (!t) return;
+                if (t.goal && !goalInput.value) {
+                    goalInput.value = t.goal;
                 }
+                if (t.status === 'running') {
+                    setLockedState(true, t.startTime);
+                    statusBox.className = 'status-box';
+                    statusBox.style.display = 'block';
+                    statusBox.innerText = 'Agent is running in background...';
+                } else if (t.status === 'completed' && t.result) {
+                    renderTaskComplete(t.result);
+                } else if (t.status === 'error' && t.error) {
+                    setLockedState(false);
+                    statusBox.className = 'status-box error';
+                    statusBox.innerText = 'Error: ' + t.error;
+                }
+            } else if (msg.type === 'taskComplete') {
+                renderTaskComplete(msg.result);
             } else if (msg.type === 'taskError') {
                 setLockedState(false);
+                vscode.setState({ ...(vscode.getState() || {}), isExecuting: false });
                 statusBox.className = 'status-box error';
                 statusBox.innerText = 'Error: ' + msg.error;
             } else if (msg.type === 'stagedFilesData') {

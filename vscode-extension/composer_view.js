@@ -13,11 +13,21 @@ class LocalCoderComposerViewProvider {
     constructor(extensionUri) {
         this._extensionUri = extensionUri;
         this._activeAbortController = null;
+        this._taskState = {
+            status: 'idle',
+            goal: '',
+            startTime: 0,
+            result: null,
+            error: null
+        };
     }
 
     resolveWebviewView(webviewView) {
         this._view = webviewView;
-        webviewView.webview.options = { enableScripts: true };
+        webviewView.webview.options = {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+        };
 
         const config = vscode.workspace.getConfiguration('localCoder');
         const providerName = config.get('provider', 'local');
@@ -27,6 +37,14 @@ class LocalCoderComposerViewProvider {
             const baseUrl = getActiveBaseUrl();
 
             switch (message.command) {
+                case 'getTaskState':
+                    if (this._view) {
+                        this._view.webview.postMessage({ type: 'taskRestoreState', task: this._taskState });
+                    }
+                    break;
+                case 'syncPrompt':
+                    this._taskState.goal = message.goal || '';
+                    break;
                 case 'submitTask':
                     await this._handleSubmitTask(baseUrl, message.goal);
                     break;
@@ -88,6 +106,8 @@ class LocalCoderComposerViewProvider {
     }
 
     _handleAbortTask() {
+        this._taskState.status = 'idle';
+        this._taskState.error = 'Task execution stopped by user.';
         if (this._activeAbortController) {
             this._activeAbortController.abort();
             this._activeAbortController = null;
@@ -112,16 +132,27 @@ class LocalCoderComposerViewProvider {
 
         const controller = new AbortController();
         this._activeAbortController = controller;
+        this._taskState = {
+            status: 'running',
+            goal: rawGoal,
+            startTime: Date.now(),
+            result: null,
+            error: null
+        };
 
         try {
             if (this._view) this._view.webview.postMessage({ type: 'taskStarted' });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'running');
 
             const res = await sendPostRequest(`${baseUrl}/api/v1/task`, { goal: enrichedGoal }, 300000, controller.signal);
+            this._taskState.status = 'completed';
+            this._taskState.result = res;
             if (this._view) this._view.webview.postMessage({ type: 'taskComplete', result: res });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'completed');
             await this._handleLoadStaged(baseUrl);
         } catch (err) {
+            this._taskState.status = 'error';
+            this._taskState.error = err.message;
             if (err.message && err.message.includes('ECONNREFUSED')) {
                 vscode.commands.executeCommand('local-coder.startDaemon');
                 if (this._view) this._view.webview.postMessage({
