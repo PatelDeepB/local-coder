@@ -2,7 +2,7 @@
   "name": "local-coder-vscode",
   "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
   "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "pateldeep",
   "repository": {
     "type": "git",
@@ -163,7 +163,7 @@
       "properties": {
         "localCoder.apiUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8000",
+          "default": "http://127.0.0.1:8080",
           "description": "Base URL of LOCAL-CODER FastAPI server daemon."
         },
         "localCoder.provider": {

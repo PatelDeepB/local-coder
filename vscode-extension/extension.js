@@ -11,6 +11,8 @@ const url = require('url');
 
 let activeDiffState = null;
 let statusBarItem = null;
+let cachedActiveUrl = 'http://127.0.0.1:8080';
+let isBackendOnline = false;
 
 // Text Editor Decorations for inline diff highlighting
 const additionDecorationType = vscode.window.createTextEditorDecorationType({
@@ -258,7 +260,7 @@ function activate(context) {
         async provideInlineCompletionItems(document, position, context, token) {
             const config = vscode.workspace.getConfiguration('localCoder');
             const autocompleteEnabled = config.get('enableAutocomplete', true);
-            if (!autocompleteEnabled) {
+            if (!autocompleteEnabled || !isBackendOnline) {
                 return { items: [] };
             }
 
@@ -268,24 +270,34 @@ function activate(context) {
                 return { items: [] };
             }
 
+            // 150ms typing debounce to avoid flooding model on rapid typing
+            await new Promise(resolve => setTimeout(resolve, 150));
+            if (token.isCancellationRequested) {
+                return { items: [] };
+            }
+
             try {
                 const textBefore = document.getText(new vscode.Range(new vscode.Position(0, 0), position));
                 const textAfter = document.getText(new vscode.Range(position, document.lineAt(document.lineCount - 1).range.end));
-                const activeUrl = await getActiveBaseUrl();
 
                 const payload = {
-                    prefix: textBefore.slice(-1000),
-                    suffix: textAfter.slice(0, 500),
-                    max_tokens: 32,
+                    prefix: textBefore.slice(-800),
+                    suffix: textAfter.slice(0, 400),
+                    max_tokens: 24,
                     single_line_only: true
                 };
 
-                const res = await sendPostRequest(`${activeUrl}/api/v1/autocomplete`, payload);
+                const res = await sendPostRequest(`${cachedActiveUrl}/api/v1/autocomplete`, payload, 2500);
                 if (token.isCancellationRequested || !res || !res.completion) {
                     return { items: [] };
                 }
 
-                const item = new vscode.InlineCompletionItem(res.completion, new vscode.Range(position, position));
+                const completionText = res.completion;
+                if (!completionText.trim()) {
+                    return { items: [] };
+                }
+
+                const item = new vscode.InlineCompletionItem(completionText, new vscode.Range(position, position));
                 return { items: [item] };
             } catch {
                 return { items: [] };
@@ -388,16 +400,25 @@ function clearActiveDiff(editor) {
  * Resolves active backend URL with automatic fallback to port 8080 if 8000 is occupied.
  */
 async function getActiveBaseUrl() {
+    if (isBackendOnline && cachedActiveUrl) {
+        return cachedActiveUrl;
+    }
     const config = vscode.workspace.getConfiguration('localCoder');
-    const configured = config.get('apiUrl') || 'http://127.0.0.1:8000';
+    const configured = config.get('apiUrl') || 'http://127.0.0.1:8080';
     try {
-        await sendGetRequest(`${configured}/health`);
+        await sendGetRequest(`${configured}/health`, 800);
+        cachedActiveUrl = configured;
+        isBackendOnline = true;
         return configured;
     } catch {
+        const altUrl = configured.includes('8080') ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:8080';
         try {
-            await sendGetRequest('http://127.0.0.1:8080/health');
-            return 'http://127.0.0.1:8080';
+            await sendGetRequest(`${altUrl}/health`, 800);
+            cachedActiveUrl = altUrl;
+            isBackendOnline = true;
+            return altUrl;
         } catch {
+            isBackendOnline = false;
             return configured;
         }
     }
@@ -413,14 +434,17 @@ async function checkBackendHealth() {
     const config = vscode.workspace.getConfiguration('localCoder');
     const activeUrl = await getActiveBaseUrl();
     try {
-        const statusData = await sendGetRequest(`${activeUrl}/api/v1/status`);
+        const statusData = await sendGetRequest(`${activeUrl}/api/v1/status`, 1200);
         const rss = Math.round(statusData.rss_mb || 0);
         const provider = config.get('provider') || 'local';
+        cachedActiveUrl = activeUrl;
+        isBackendOnline = true;
         statusBarItem.text = `$(sparkle) Local Coder: ${rss}MB [${provider}]`;
         statusBarItem.tooltip = `Status: ${statusData.status} | URL: ${activeUrl} | Staged: ${statusData.staged_files.length} | Click to switch`;
     } catch {
+        isBackendOnline = false;
         statusBarItem.text = '$(circle-slash) Local Coder: Offline';
-        statusBarItem.tooltip = 'FastAPI server daemon is not running on 127.0.0.1:8000 or 8080';
+        statusBarItem.tooltip = 'FastAPI server daemon is not running on 127.0.0.1:8080 or 8000. Start via: python -m uvicorn local_coder.server.api_server:app --port 8080';
     }
 }
 
@@ -546,7 +570,7 @@ class LocalCoderComposerViewProvider {
 /**
  * Performs an HTTP POST request.
  */
-function sendPostRequest(targetUrl, payload) {
+function sendPostRequest(targetUrl, payload, timeoutMs = 60000) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(targetUrl);
         const data = JSON.stringify(payload);
@@ -559,7 +583,7 @@ function sendPostRequest(targetUrl, payload) {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(data)
             },
-            timeout: 60000
+            timeout: timeoutMs
         };
 
         const client = parsed.protocol === 'https:' ? https : http;
@@ -592,7 +616,7 @@ function sendPostRequest(targetUrl, payload) {
 /**
  * Performs an HTTP GET request.
  */
-function sendGetRequest(targetUrl) {
+function sendGetRequest(targetUrl, timeoutMs = 5000) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(targetUrl);
         const options = {
@@ -600,7 +624,7 @@ function sendGetRequest(targetUrl) {
             port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
             path: parsed.pathname + parsed.search,
             method: 'GET',
-            timeout: 5000
+            timeout: timeoutMs
         };
 
         const client = parsed.protocol === 'https:' ? https : http;
