@@ -58,3 +58,42 @@ def test_should_match_with_ellipsis_wildcard() -> None:
     assert res.is_success is True
     assert "return sum(items)" in res.modified_content
     assert "acc = 0" not in res.modified_content
+
+
+def test_should_recover_swapped_search_and_replace() -> None:
+    # Arrange: LLM put existing code in replace and new code in search
+    patcher = PrecisionPatcher()
+    original = "x = 100\ny = 200\n"
+    search_b = "x = 150\ny = 200\n"
+    replace_b = "x = 100\ny = 200\n"
+
+    # Act
+    res = patcher.apply_search_replace(original, search_b, replace_b)
+
+    # Assert
+    assert res.is_success is True
+    assert "x = 150" in res.modified_content
+
+
+def test_should_recover_when_intended_replacement_in_search_and_ellipsis_in_replace() -> None:
+    # Arrange: LLM emitted replacement in search and ... in replace
+    patcher = PrecisionPatcher()
+    original = (
+        "class Status:\n"
+        "    IDLE = 'IDLE'\n"
+        "    BUSY = 'BUSY'\n"
+    )
+    search_b = (
+        "class Status:\n"
+        "    IDLE = 'IDLE'\n"
+        "    BUSY = 'BUSY'\n"
+        "    PAUSED = 'PAUSED'\n"
+    )
+    replace_b = "..."
+
+    # Act
+    res = patcher.apply_search_replace(original, search_b, replace_b)
+
+    # Assert
+    assert res.is_success is True
+    assert "PAUSED = 'PAUSED'" in res.modified_content

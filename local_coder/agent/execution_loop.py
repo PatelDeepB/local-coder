@@ -143,7 +143,7 @@ class AgentExecutionLoop:
                     if len(all_patches) > 1:
                         applied_files: list[str] = []
                         for p_path, p_body in all_patches:
-                            m_hunk = re.search(r'<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)[\r\n]+(?:>{5,9}|$)', p_body, flags=re.DOTALL)
+                            m_hunk = re.search(r'<{5,9}\s*SEARCH[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)', p_body, flags=re.DOTALL)
                             if m_hunk:
                                 clean_p = p_path.strip().strip("`'\" ")
                                 p_res = target_tool.execute(

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 import json
 import os
+import re
 import time
 import uuid
 
@@ -142,7 +143,10 @@ class LocalCoderOrchestrator:
 
         # Step 1: Execute synthesis engine
         goal_lower = user_goal.lower()
-        is_scaffold = any(kw in goal_lower for kw in ["create", "build", "scaffold", "react", "website", "next", "app", "application"])
+        scaffold_kws = ["create", "build", "scaffold", "react", "website", "next", "app", "application"]
+        is_scaffold = any(re.search(rf"\b{kw}\b", goal_lower) for kw in scaffold_kws)
+        if any(kw in goal_lower for kw in ["modify", "edit", "update", "patch", "refactor"]):
+            is_scaffold = False
 
         if is_scaffold:
             session = AgentSessionState(

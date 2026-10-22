@@ -16,6 +16,9 @@ models/
 
 # Temporary & Workspace Runs
 workspace_runs/
+benchmark_tasks/
+benchmark_evaluation/
+CHANGELOG.md
 .localcoder/
 *.hkg
 *.db-shm

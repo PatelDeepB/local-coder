@@ -61,7 +61,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
     if m_xml_patch:
         patch_path = m_xml_patch.group(1).strip().strip("`'\" ")
         patch_body = m_xml_patch.group(2)
-        m_hunk = re.search(r'<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)[\r\n]+(?:>{5,9}|$)', patch_body, flags=re.DOTALL)
+        m_hunk = re.search(r'<{5,9}\s*SEARCH[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)', patch_body, flags=re.DOTALL)
         if m_hunk:
             return "apply_search_replace_patch", {
                 "file_path": patch_path,
@@ -70,7 +70,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
             }
 
     m_patch = re.search(
-        r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*SEARCH[\r\n]+(.*?)[\r\n]+={5,9}[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
+        r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*SEARCH[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
         clean,
         flags=re.DOTALL,
     )

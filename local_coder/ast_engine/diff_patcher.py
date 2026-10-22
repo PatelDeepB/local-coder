@@ -72,6 +72,27 @@ class PrecisionPatcher:
                     diff = self.generate_unified_diff(norm_orig, modified)
                     return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
 
+        # 4. Swapped SEARCH/REPLACE recovery: check if replace block matches original
+        if norm_replace and norm_replace in norm_orig and norm_search not in norm_orig:
+            modified = norm_orig.replace(norm_replace, norm_search, 1)
+            diff = self.generate_unified_diff(norm_orig, modified)
+            return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
+
+        # 5. Model put intended replacement in SEARCH with ellipsis in REPLACE
+        if norm_replace in ["...", "", "pass"] or norm_replace.startswith("..."):
+            orig_lines = norm_orig.splitlines()
+            search_lines = [l for l in norm_search.splitlines() if not l.strip().startswith("#") and l.strip()]
+            if search_lines:
+                matcher = difflib.SequenceMatcher(None, orig_lines, search_lines)
+                m = matcher.find_longest_match(0, len(orig_lines), 0, len(search_lines))
+                if m.size >= 2:
+                    matched_prefix = orig_lines[: m.a]
+                    matched_suffix = orig_lines[m.a + m.size :]
+                    new_lines = matched_prefix + norm_search.splitlines() + matched_suffix
+                    modified = "\n".join(new_lines) + ("\n" if norm_orig.endswith("\n") else "")
+                    diff = self.generate_unified_diff(norm_orig, modified)
+                    return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
+
         return PatchResult(
             is_success=False,
             modified_content=original_content,
