@@ -169,7 +169,12 @@ async def execute_task(req: TaskRequest) -> dict[str, Any]:
     if not orchestrator_instance:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
 
-    session = orchestrator_instance.run_coding_task(req.goal)
+    try:
+        session = orchestrator_instance.run_coding_task(req.goal)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Task execution error: {str(exc)}")
     steps_data = [
         {
             "step_number": s.step_number,

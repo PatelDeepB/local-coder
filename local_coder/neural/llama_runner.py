@@ -109,9 +109,31 @@ class LlamaModelRunner:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        # Safeguard: dynamically compute token headroom and prevent context window overflow
+        try:
+            full_text = f"{system_prompt}\n{prompt}"
+            input_tokens = len(self._llm.tokenize(full_text.encode("utf-8")))
+        except Exception:
+            input_tokens = len(prompt.split()) * 2
+
+        available_tokens = self.context_size - input_tokens - 16
+        if available_tokens < 64:
+            prompt_lines = prompt.splitlines()
+            while len(prompt_lines) > 20 and available_tokens < 128:
+                prompt_lines.pop(1)
+                prompt = "\n".join(prompt_lines)
+                try:
+                    input_tokens = len(self._llm.tokenize(f"{system_prompt}\n{prompt}".encode("utf-8")))
+                except Exception:
+                    input_tokens = len(prompt.split()) * 2
+                available_tokens = self.context_size - input_tokens - 16
+            messages[-1]["content"] = prompt
+
+        effective_max_tokens = max(32, min(max_tokens, max(32, available_tokens)))
+
         output = self._llm.create_chat_completion(
             messages=messages,
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             temperature=temperature,
             top_p=0.9,
             repeat_penalty=1.1,

@@ -194,6 +194,8 @@ class LocalCoderOrchestrator:
             ]
             repo_inv = "Existing Project Files:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
             schema = self.ast_compactor.build_workspace_schema(self.root_dir, self.shadow_workspace)
+            if schema and len(schema) > 1800:
+                schema = schema[:1800] + "\n... [truncated schema]"
             schema_block = f"\n\nVirtual Workspace Schema (64K token context compressed):\n{schema}" if schema else ""
             mod_rules = (
                 f"{repo_inv}{schema_block}\n\n"

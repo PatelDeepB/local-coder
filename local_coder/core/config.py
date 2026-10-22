@@ -23,8 +23,8 @@ class LocalCoderConfig:
     default_model_path: Path = _resolve_default_model_path(
         Path(__file__).resolve().parent.parent.parent / "models"
     )
-    max_rss_mb: float = 1900.0  # Strict safe ceiling under 2.0 GB RAM limit
-    context_window_size: int = 4096
+    max_rss_mb: float = 2000.0  # Safe ceiling strictly under 2.0 GB RAM limit (2048 MB)
+    context_window_size: int = 4608
     prompt_batch_size: int = 512
     terminal_timeout_seconds: float = 30.0
     enable_flash_attention: bool = False
