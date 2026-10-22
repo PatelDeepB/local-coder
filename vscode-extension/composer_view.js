@@ -65,7 +65,7 @@ class LocalCoderComposerViewProvider {
                     await this._handleLoadStaged(baseUrl);
                     break;
                 case 'viewDiff':
-                    await this._handleViewDiff(message.filePath, message.stagedContent);
+                    await this._handleViewDiff(message.filePath, message.stagedContent, message.originalContent);
                     break;
                 case 'commitSingle':
                     await sendPostRequest(`${baseUrl}/api/v1/staged-files/commit`, { file_path: message.filePath });
@@ -174,6 +174,11 @@ class LocalCoderComposerViewProvider {
 
     async _handleLoadFiles(baseUrl) {
         try {
+            const wsFolders = vscode.workspace.workspaceFolders;
+            const wsRoot = wsFolders && wsFolders.length > 0 ? wsFolders[0].uri.fsPath : null;
+            if (wsRoot) {
+                await sendPostRequest(`${baseUrl}/api/v1/workspace/set`, { workspace_root: wsRoot }, 1000).catch(() => {});
+            }
             const res = await sendGetRequest(`${baseUrl}/api/v1/workspace/files`, 2000);
             if (this._view) this._view.webview.postMessage({ type: 'workspaceFiles', files: res.files || [] });
         } catch {
@@ -190,17 +195,19 @@ class LocalCoderComposerViewProvider {
         }
     }
 
-    async _handleViewDiff(filePath, stagedContent) {
+    async _handleViewDiff(filePath, stagedContent, originalContent) {
         const wsRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-        const origPath = path.join(wsRoot, filePath);
         const tempDir = path.join(wsRoot, '.localcoder', 'staged');
         fs.mkdirSync(tempDir, { recursive: true });
 
-        const tempFile = path.join(tempDir, path.basename(filePath));
-        fs.writeFileSync(tempFile, stagedContent || '', 'utf8');
+        const origTempFile = path.join(tempDir, 'orig_' + path.basename(filePath));
+        fs.writeFileSync(origTempFile, originalContent !== undefined && originalContent !== null ? originalContent : '', 'utf8');
 
-        const leftUri = fs.existsSync(origPath) ? vscode.Uri.file(origPath) : vscode.Uri.file(tempFile);
-        const rightUri = vscode.Uri.file(tempFile);
+        const stagedTempFile = path.join(tempDir, 'staged_' + path.basename(filePath));
+        fs.writeFileSync(stagedTempFile, stagedContent || '', 'utf8');
+
+        const leftUri = vscode.Uri.file(origTempFile);
+        const rightUri = vscode.Uri.file(stagedTempFile);
         const title = `${path.basename(filePath)} (Original <-> Staged)`;
         await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
     }

@@ -101,10 +101,25 @@ class ShadowWorkspace:
     def discard_file(self, relative_path: str) -> bool:
         """Discards a single staged file without affecting other files."""
         target_path = (self.root_dir / relative_path).resolve()
-        return self._staged_edits.pop(target_path, None) is not None
+        edit = self._staged_edits.pop(target_path, None)
+        if not edit:
+            return False
+
+        if edit.original_content is not None:
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(edit.original_content)
+        elif target_path.exists():
+            os.remove(target_path)
+        return True
 
     def discard_all(self) -> None:
-        """Discards all staged edits in the shadow workspace."""
+        """Discards all staged edits in the shadow workspace, reverting files on disk."""
+        for target_path, edit in list(self._staged_edits.items()):
+            if edit.original_content is not None:
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(edit.original_content)
+            elif target_path.exists():
+                os.remove(target_path)
         self._staged_edits.clear()
 
     @property

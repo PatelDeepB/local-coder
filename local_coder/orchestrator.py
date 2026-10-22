@@ -29,12 +29,7 @@ from local_coder.neural.llama_runner import LlamaModelRunner
 from local_coder.neural.model_router import ModelRouter, ModelProvider
 from local_coder.neural.slot_coder import SlotCoder
 from local_coder.neural.speculative_drafter import SpeculativeDraftingEngine
-from local_coder.tools.file_tools import (
-    FileOutlineTool,
-    ListDirectoryTool,
-    ReadFileTool,
-    WriteFileTool,
-)
+from local_coder.tools.file_tools import FileOutlineTool, ListDirectoryTool, ReadFileTool, WriteFileTool
 from local_coder.tools.patch_tools import ApplySearchReplacePatchTool, LibCSTTransformTool
 from local_coder.tools.search_tools import LookupSymbolTool, SearchCodeTool
 from local_coder.tools.terminal_tools import RunTerminalCommandTool
@@ -60,20 +55,36 @@ class LocalCoderOrchestrator:
     ) -> None:
         self.root_dir = Path(workspace_root or os.getcwd()).resolve()
         self.memory_guard = MemoryGuard()
+        self.scrubber = SecretScrubber()
+        self.hdc_index = HDCCodeIndex()
+        self.coding_knowledge = CodingKnowledgeDB()
+        self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
+        self.contract_planner = ContractPlanner(self.runner)
+        self.slot_coder = SlotCoder(self.runner)
+        self.speculative_drafter = SpeculativeDraftingEngine()
+        self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
+        self.ast_compactor = ASTSemanticCompactor()
+        self.syntax_validator = SyntaxValidator()
+        self.compiler_gate = CompilerGate()
+        self.episodic_ring = EpisodicRollingHashRing(ring_capacity=5)
+        self.symbol_graph: Optional[MmapSymbolGraph] = None
+        self.file_watcher: Optional[IncrementalFileWatcher] = None
+        self._setup_workspace(self.root_dir)
 
-        # Workspace & Execution Infrastructure
+    def _setup_workspace(self, root: Path) -> None:
+        self.root_dir = root
+        if self.symbol_graph is not None:
+            self.symbol_graph.close()
+        if self.file_watcher is not None:
+            self.file_watcher.stop()
+
         self.shadow_workspace = ShadowWorkspace(self.root_dir)
         self.transaction_mgr = WorkspaceTransactionManager(self.shadow_workspace)
         self.terminal_runner = TerminalRunner(str(self.root_dir))
         self.git_mgr = GitManager(self.root_dir)
         self.rules_engine = RulesEngine(self.root_dir)
-        self.scrubber = SecretScrubber()
-
-        # Knowledge & Zero-RAM Substrates
-        self.hdc_index = HDCCodeIndex()
         graph_file = str(self.root_dir / ".localcoder" / "symbols.hkg")
         self.symbol_graph = MmapSymbolGraph(graph_file)
-        self.episodic_ring = EpisodicRollingHashRing(ring_capacity=5)
         self.tree_indexer = TreeIndexer(self.hdc_index, self.symbol_graph)
         self.dependency_graph = CodebaseDependencyGraph(self.root_dir)
         self.file_watcher = IncrementalFileWatcher(
@@ -81,24 +92,10 @@ class LocalCoderOrchestrator:
             tree_indexer=self.tree_indexer,
             dependency_graph=self.dependency_graph,
         )
-        self.coding_knowledge = CodingKnowledgeDB()
-
-        # Neural Engine
-        self.runner = model_runner or ModelRouter(memory_guard=self.memory_guard)
-        self.contract_planner = ContractPlanner(self.runner)
-        self.slot_coder = SlotCoder(self.runner)
-        self.speculative_drafter = SpeculativeDraftingEngine()
-        self.infilling_engine = InfillingEngine(self.runner, drafter=self.speculative_drafter)
-        self.ast_compactor = ASTSemanticCompactor()
-
-        # Verifier Gate
-        self.syntax_validator = SyntaxValidator()
         self.test_runner = TestRunner(self.terminal_runner)
         self.repair_loop = MicroRepairLoop(
             repair_generator=lambda prompt, ctx: self.runner.generate(prompt=prompt, max_tokens=200).content
         )
-
-        # Register Tools
         self.tools = [
             ReadFileTool(self.shadow_workspace),
             WriteFileTool(self.shadow_workspace),
@@ -111,10 +108,7 @@ class LocalCoderOrchestrator:
             RunTerminalCommandTool(self.terminal_runner),
             RunAutonomousTestRepairTool(self.runner, self.shadow_workspace, self.terminal_runner),
         ]
-
-        # Agent Loop & Manifest Synthesizer
         self.agent_loop = AgentExecutionLoop(runner=self.runner, tools=self.tools)
-        self.compiler_gate = CompilerGate()
         self.manifest_synthesizer = ManifestSynthesizer(
             runner=self.runner,
             workspace=self.shadow_workspace,
@@ -127,6 +121,12 @@ class LocalCoderOrchestrator:
             knowledge_db=self.coding_knowledge,
         )
 
+    def set_workspace(self, workspace_root: str | Path) -> None:
+        """Dynamically re-roots the orchestrator and shadow workspace to a new workspace directory."""
+        target = Path(workspace_root).resolve()
+        if target != self.root_dir:
+            self._setup_workspace(target)
+
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
         return self.tree_indexer.index_directory(self.root_dir)
@@ -138,6 +138,9 @@ class LocalCoderOrchestrator:
         auto_commit: bool = True,
     ) -> AgentSessionState:
         """Executes full autonomous coding task in a dedicated physical run directory."""
+        if output_directory:
+            self.set_workspace(output_directory)
+
         self.memory_guard.assert_within_budget()
         rules = self.rules_engine.discover_rules() or ""
 
@@ -188,36 +191,36 @@ class LocalCoderOrchestrator:
                 if p.is_file()
                 and not any(
                     part.startswith(".")
-                    or part in ["venv", "__pycache__", "node_modules", "workspace_runs"]
+                    or part in ["venv", "__pycache__", "node_modules", "workspace_runs", "dist", "build"]
                     for part in p.parts
                 )
             ]
-            repo_inv = "Existing Project Files:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
+            if existing_files:
+                repo_inv = "Existing Project Files in Workspace:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
+            else:
+                repo_inv = "Existing Project Files in Workspace: (None - new or empty project)"
+
             schema = self.ast_compactor.build_workspace_schema(self.root_dir, self.shadow_workspace)
             if schema and len(schema) > 1800:
                 schema = schema[:1800] + "\n... [truncated schema]"
             schema_block = f"\n\nVirtual Workspace Schema (64K token context compressed):\n{schema}" if schema else ""
             mod_rules = (
                 f"{repo_inv}{schema_block}\n\n"
-                f"CRITICAL RULES FOR MODIFICATIONS:\n"
-                f"1. When modifying existing files, edit them at their exact paths in-place.\n"
-                f"2. Use apply_search_replace_patch with <<<<<<< SEARCH ... ======= ... >>>>>>> for precision edits.\n"
-                f"3. NEVER use write_file with '# Existing code...' stubs. Always provide complete code or precision patches.\n"
-                f"4. Preserve all existing classes and methods, adding or updating only the requested functionality."
+                f"CRITICAL RULES:\n"
+                f"1. To modify an existing file, use <patch file=\"path\"> or <write_file path=\"path\"> at its exact path.\n"
+                f"2. To create a new file or add a new module/test requested by the user, use <write_file path=\"path\">.\n"
+                f"3. NEVER use write_file with '# Existing code...' stubs. Always provide complete working code or precision patches.\n"
+                f"4. Preserve all existing classes and functions when updating files."
             )
             full_rules = f"{rules}\n\n{mod_rules}" if rules else mod_rules
             session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=full_rules)
 
-        # Step 2: Create physical directory on disk for this run
-        run_dir = (
-            Path(output_directory).resolve()
-            if output_directory
-            else (self.root_dir / "workspace_runs" / f"run_{session.session_id}")
-        )
+        # Step 2: Determine run directory
+        run_dir = Path(output_directory).resolve() if output_directory else (self.root_dir / "workspace_runs" / f"run_{session.session_id}")
         run_dir.mkdir(parents=True, exist_ok=True)
         session.output_directory = str(run_dir)
 
-        # Step 3: Physically write all staged files to the run directory
+        # Step 3: Physically write all staged files to disk
         saved_files: list[str] = []
         for p, edit in list(self.shadow_workspace._staged_edits.items()):
             try:
@@ -229,11 +232,11 @@ class LocalCoderOrchestrator:
             target_file.parent.mkdir(parents=True, exist_ok=True)
             with open(target_file, "w", encoding="utf-8") as f:
                 f.write(edit.staged_content)
-            saved_files.append(str(rel))
+            saved_files.append(str(rel).replace("\\", "/"))
 
         session.modified_files = saved_files
 
-        # Step 4: Write execution summary report to disk
+        # Step 4: Write execution summary to disk (.localcoder subdirectory to avoid project clutter)
         summary_payload = {
             "session_id": session.session_id,
             "user_goal": session.user_goal,
@@ -252,7 +255,9 @@ class LocalCoderOrchestrator:
                 for s in session.completed_steps
             ],
         }
-        with open(run_dir / "execution_summary.json", "w", encoding="utf-8") as f:
+        summary_dir = run_dir / ".localcoder" if output_directory else run_dir
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        with open(summary_dir / "execution_summary.json", "w", encoding="utf-8") as f:
             json.dump(summary_payload, f, indent=2)
 
         # Step 5: If auto_commit enabled, commit to workspace root as well

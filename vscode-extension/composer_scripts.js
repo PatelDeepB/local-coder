@@ -243,7 +243,12 @@ function getComposerScripts() {
                 nameSpan.innerText = f.file_path;
                 nameSpan.style.cursor = 'pointer';
                 nameSpan.style.textDecoration = 'underline';
-                nameSpan.onclick = () => vscode.postMessage({ command: 'viewDiff', filePath: f.file_path, stagedContent: f.staged_content });
+                nameSpan.onclick = () => vscode.postMessage({
+                    command: 'viewDiff',
+                    filePath: f.file_path,
+                    stagedContent: f.staged_content,
+                    originalContent: f.original_content
+                });
 
                 const actionDiv = document.createElement('div');
                 actionDiv.style.display = 'flex';
@@ -252,7 +257,12 @@ function getComposerScripts() {
                 const diffBtn = document.createElement('button');
                 diffBtn.className = 'btn-sm btn-sec';
                 diffBtn.innerText = 'Diff';
-                diffBtn.onclick = () => vscode.postMessage({ command: 'viewDiff', filePath: f.file_path, stagedContent: f.staged_content });
+                diffBtn.onclick = () => vscode.postMessage({
+                    command: 'viewDiff',
+                    filePath: f.file_path,
+                    stagedContent: f.staged_content,
+                    originalContent: f.original_content
+                });
 
                 const acceptBtn = document.createElement('button');
                 acceptBtn.className = 'btn-sm';

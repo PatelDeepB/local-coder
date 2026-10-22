@@ -92,3 +92,41 @@ def test_should_stage_valid_json_and_reject_invalid_json_via_write_file_tool(tmp
     invalid_res = tool.execute(file_path="package.json", content='{"name": "broken-json", "version": }')
     assert invalid_res.is_success is False
     assert "JSON Syntax Error" in invalid_res.error_message
+
+
+def test_should_discard_file_and_revert_disk_to_original(tmp_path: Path) -> None:
+    # Arrange
+    target = tmp_path / "module.py"
+    target.write_text("x = 10\n", encoding="utf-8")
+    workspace = ShadowWorkspace(tmp_path)
+    workspace.stage_edit("module.py", "x = 999\n")
+    # Simulate writing staged to disk
+    target.write_text("x = 999\n", encoding="utf-8")
+
+    # Act
+    discarded = workspace.discard_file("module.py")
+
+    # Assert
+    assert discarded is True
+    assert target.read_text(encoding="utf-8") == "x = 10\n"
+    assert workspace.get_staged_content("module.py") == "x = 10\n"
+
+
+def test_should_discard_all_and_revert_disk(tmp_path: Path) -> None:
+    # Arrange
+    f1 = tmp_path / "a.py"
+    f2 = tmp_path / "b.py"
+    f1.write_text("a = 1\n", encoding="utf-8")
+    f2.write_text("b = 2\n", encoding="utf-8")
+    workspace = ShadowWorkspace(tmp_path)
+    workspace.stage_edit("a.py", "a = 100\n")
+    workspace.stage_edit("b.py", "b = 200\n")
+    f1.write_text("a = 100\n", encoding="utf-8")
+    f2.write_text("b = 200\n", encoding="utf-8")
+
+    # Act
+    workspace.discard_all()
+
+    # Assert
+    assert f1.read_text(encoding="utf-8") == "a = 1\n"
+    assert f2.read_text(encoding="utf-8") == "b = 2\n"

@@ -154,3 +154,51 @@ def test_should_heal_diagnostics() -> None:
     assert "return 42" in data["repaired_code"]
 
 
+def test_should_set_active_workspace() -> None:
+    # Arrange
+    mock_orch = MagicMock()
+    mock_orch.root_dir = "/tmp/my_project"
+    api_module.orchestrator_instance = mock_orch
+
+    client = TestClient(app)
+    payload = {"workspace_root": "/tmp/my_project"}
+
+    # Act
+    resp = client.post("/api/v1/workspace/set", json=payload)
+
+    # Assert
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    mock_orch.set_workspace.assert_called_once_with("/tmp/my_project")
+
+
+def test_should_execute_task_with_output_directory() -> None:
+    # Arrange
+    mock_orch = MagicMock()
+    mock_session = AgentSessionState(
+        session_id="run999",
+        user_goal="create api endpoint",
+        status=TaskStatus.COMPLETED,
+        output_directory="/tmp/my_project",
+        modified_files=["app.py"],
+    )
+    mock_orch.run_coding_task.return_value = mock_session
+    api_module.orchestrator_instance = mock_orch
+
+    client = TestClient(app)
+    payload = {
+        "goal": "create api endpoint",
+        "output_directory": "/tmp/my_project",
+    }
+
+    # Act
+    resp = client.post("/api/v1/task", json=payload)
+
+    # Assert
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["modified_files"] == ["app.py"]
+    mock_orch.set_workspace.assert_called_once_with("/tmp/my_project")
+
+

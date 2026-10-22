@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
+import asyncio
 import json
 import re
 import time
@@ -170,10 +171,15 @@ async def execute_task(req: TaskRequest) -> dict[str, Any]:
     if not orchestrator_instance:
         raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
 
+    if req.output_directory:
+        orchestrator_instance.set_workspace(req.output_directory)
+
     try:
-        session = orchestrator_instance.run_coding_task(
+        session = await asyncio.to_thread(
+            orchestrator_instance.run_coding_task,
             user_goal=req.goal,
-            output_directory=req.output_directory
+            output_directory=req.output_directory,
+            auto_commit=False,
         )
     except Exception as exc:
         import traceback
@@ -278,6 +284,17 @@ async def list_workspace_files() -> dict[str, Any]:
             rel = str(p.relative_to(orchestrator_instance.root_dir)).replace("\\", "/")
             files.append(rel)
     return {"files": sorted(files[:200])}
+
+
+@app.post("/api/v1/workspace/set")
+async def set_active_workspace(req: dict[str, str]) -> dict[str, str]:
+    """Sets the active workspace root directory."""
+    if not orchestrator_instance:
+        raise HTTPException(status_code=500, detail="Orchestrator not initialized.")
+    ws = req.get("workspace_root")
+    if ws:
+        orchestrator_instance.set_workspace(ws)
+    return {"status": "ok", "workspace_root": str(orchestrator_instance.root_dir)}
 
 
 @app.post("/api/v1/commit")
