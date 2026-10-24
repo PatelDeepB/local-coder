@@ -46,10 +46,46 @@ function getComposerStyles() {
             border: 1px solid rgba(56, 189, 248, 0.3);
             cursor: pointer;
         }
-        .input-wrap {
-            position: relative;
-            margin-bottom: 6px;
+        .dir-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 8px;
+            margin-bottom: 8px;
+            background: rgba(56, 189, 248, 0.06);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 5px;
+            gap: 6px;
         }
+        .dir-info {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            overflow: hidden;
+            flex: 1;
+            cursor: pointer;
+        }
+        .dir-icon { font-size: 12px; flex-shrink: 0; }
+        .dir-label { font-size: 10px; color: var(--vscode-descriptionForeground, #888); font-weight: 600; flex-shrink: 0; }
+        .dir-path {
+            font-size: 11px;
+            color: var(--primary);
+            font-family: var(--vscode-editor-font-family);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .btn-xs {
+            padding: 2px 6px;
+            font-size: 10px;
+            border-radius: 3px;
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            flex-shrink: 0;
+            border: 1px solid var(--border-subtle);
+        }
+        .btn-xs:hover { background: var(--vscode-button-secondaryHoverBackground); }
+        .input-wrap { position: relative; margin-bottom: 6px; }
         textarea {
             width: 100%;
             box-sizing: border-box;
@@ -64,11 +100,7 @@ function getComposerStyles() {
             min-height: 85px;
             transition: all 0.2s ease;
         }
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 1px var(--primary);
-        }
+        textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
         textarea.locked {
             opacity: 0.75;
             background: rgba(0, 0, 0, 0.2);
@@ -81,12 +113,7 @@ function getComposerStyles() {
             0%, 100% { box-shadow: 0 0 6px var(--primary-glow); }
             50% { box-shadow: 0 0 16px rgba(56, 189, 248, 0.7); }
         }
-        .chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            margin-bottom: 8px;
-        }
+        .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
         .chip {
             background: var(--vscode-badge-background);
             color: var(--vscode-badge-foreground);
@@ -97,15 +124,8 @@ function getComposerStyles() {
             border: 1px solid transparent;
             user-select: none;
         }
-        .chip:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-        .btn-row {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
+        .chip:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-row { display: flex; gap: 6px; align-items: center; }
         button {
             background: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
@@ -121,32 +141,16 @@ function getComposerStyles() {
             gap: 5px;
             transition: opacity 0.15s;
         }
-        button:hover:not(:disabled) {
-            background: var(--vscode-button-hoverBackground);
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-sec {
             background: var(--vscode-button-secondaryBackground);
             color: var(--vscode-button-secondaryForeground);
         }
-        .btn-sec:hover:not(:disabled) {
-            background: var(--vscode-button-secondaryHoverBackground);
-        }
-        .btn-danger {
-            background: var(--danger);
-            color: #fff;
-        }
-        .btn-danger:hover:not(:disabled) {
-            background: #dc2626;
-        }
-        .btn-sm {
-            padding: 2px 6px;
-            font-size: 10px;
-            border-radius: 3px;
-        }
+        .btn-sec:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover:not(:disabled) { background: #dc2626; }
+        .btn-sm { padding: 2px 6px; font-size: 10px; border-radius: 3px; }
         .spinner {
             display: inline-block;
             width: 10px;
@@ -156,9 +160,7 @@ function getComposerStyles() {
             border-top-color: #fff;
             animation: spin 0.8s linear infinite;
         }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .progress-bar {
             height: 3px;
             width: 100%;

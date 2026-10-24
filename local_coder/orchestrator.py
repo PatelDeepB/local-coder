@@ -128,6 +128,7 @@ class LocalCoderOrchestrator:
     def set_workspace(self, workspace_root: str | Path) -> None:
         """Dynamically re-roots the orchestrator and shadow workspace to a new workspace directory."""
         target = Path(workspace_root).resolve()
+        target.mkdir(parents=True, exist_ok=True)
         if target != self.root_dir:
             self._setup_workspace(target)
 

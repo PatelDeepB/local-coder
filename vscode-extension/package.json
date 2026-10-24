@@ -2,7 +2,7 @@
   "name": "local-coder-vscode",
   "displayName": "LOCAL-CODER: Autonomous AI Pair Programmer",
   "description": "High-performance in-editor AI pair programmer with inline edits (Ctrl+K), Composer (Ctrl+Shift+L), compiler gates, and local/frontier tiering.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "pateldeep",
   "repository": {
     "type": "git",

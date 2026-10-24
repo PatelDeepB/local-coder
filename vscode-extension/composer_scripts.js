@@ -1,6 +1,6 @@
 /**
  * LOCAL-CODER Composer Client Scripts
- * Provides prompt locking, live execution timer, mention autocomplete, and diff review logic.
+ * Provides prompt locking, live execution timer, mention autocomplete, directory picker, and diff review.
  */
 
 function getComposerScripts() {
@@ -18,21 +18,24 @@ function getComposerScripts() {
         const stagedTitle = document.getElementById('stagedTitle');
         const stepLog = document.getElementById('stepLog');
         const providerBadge = document.getElementById('providerBadge');
+        const targetDirDisplay = document.getElementById('targetDirDisplay');
+        const changeDirBtn = document.getElementById('changeDirBtn');
+        const dirInfoClickable = document.getElementById('dirInfoClickable');
 
         let wsFiles = [];
         let isExecuting = false;
         let timerInterval = null;
         let startTime = 0;
 
-        // Restore saved state from previous view session
         const saved = vscode.getState() || {};
-        if (saved.goal && !goalInput.value) {
-            goalInput.value = saved.goal;
-        }
+        if (saved.goal && !goalInput.value) goalInput.value = saved.goal;
 
         vscode.postMessage({ command: 'getTaskState' });
         vscode.postMessage({ command: 'loadWorkspaceFiles' });
         vscode.postMessage({ command: 'loadStagedFiles' });
+
+        if (changeDirBtn) changeDirBtn.onclick = () => vscode.postMessage({ command: 'selectTargetDirectory' });
+        if (dirInfoClickable) dirInfoClickable.onclick = () => vscode.postMessage({ command: 'selectTargetDirectory' });
 
         function setLockedState(locked, customStart) {
             isExecuting = locked;
@@ -45,10 +48,7 @@ function getComposerScripts() {
                 progressBar.style.display = 'block';
                 startTime = customStart || startTime || Date.now();
                 if (timerInterval) clearInterval(timerInterval);
-                const tick = () => {
-                    const sec = ((Date.now() - startTime) / 1000).toFixed(1);
-                    elapsedSec.innerText = sec;
-                };
+                const tick = () => { elapsedSec.innerText = ((Date.now() - startTime) / 1000).toFixed(1); };
                 tick();
                 timerInterval = setInterval(tick, 100);
             } else {
@@ -56,10 +56,7 @@ function getComposerScripts() {
                 execBtn.style.display = 'inline-flex';
                 stopBtn.style.display = 'none';
                 progressBar.style.display = 'none';
-                if (timerInterval) {
-                    clearInterval(timerInterval);
-                    timerInterval = null;
-                }
+                if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
             }
         }
 
@@ -99,10 +96,7 @@ function getComposerScripts() {
         if (stopBtn) stopBtn.addEventListener('click', triggerStop);
 
         goalInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                triggerExecute();
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            if ((e.key === 'Enter' && !e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
                 e.preventDefault();
                 triggerExecute();
             } else if (e.key === 'Escape') {
@@ -128,8 +122,7 @@ function getComposerScripts() {
                         div.className = 'mention-item';
                         div.innerText = '@' + f;
                         div.onclick = () => {
-                            const newText = textBefore.slice(0, atMatch.index) + '@' + f + ' ' + val.slice(cursorPos);
-                            goalInput.value = newText;
+                            goalInput.value = textBefore.slice(0, atMatch.index) + '@' + f + ' ' + val.slice(cursorPos);
                             mentionBox.style.display = 'none';
                             goalInput.focus();
                         };
@@ -142,9 +135,7 @@ function getComposerScripts() {
             mentionBox.style.display = 'none';
         });
 
-        document.getElementById('chipCurrentFile').onclick = () => {
-            vscode.postMessage({ command: 'insertActiveFile' });
-        };
+        document.getElementById('chipCurrentFile').onclick = () => vscode.postMessage({ command: 'insertActiveFile' });
         document.getElementById('chipFixErrors').onclick = () => {
             goalInput.value = (goalInput.value ? goalInput.value + ' ' : '') + 'Inspect and fix all LSP compiler diagnostic errors in current file.';
             goalInput.focus();
@@ -170,7 +161,7 @@ function getComposerScripts() {
             vscode.setState({ ...(vscode.getState() || {}), isExecuting: false });
             const count = result.modified_files ? result.modified_files.length : 0;
             statusBox.className = 'status-box success';
-            statusBox.innerText = 'Completed. ' + count + ' file(s) staged for review.';
+            statusBox.innerText = 'Completed. ' + count + ' file(s) staged for review in target directory.';
             if (result.steps && result.steps.length > 0) {
                 stepLog.style.display = 'block';
                 stepLog.innerHTML = '';
@@ -185,23 +176,26 @@ function getComposerScripts() {
 
         window.addEventListener('message', (event) => {
             const msg = event.data;
-            if (msg.type === 'workspaceFiles') {
+            if (msg.type === 'targetDirectoryUpdated' && targetDirDisplay) {
+                targetDirDisplay.innerText = msg.basename || msg.path || '(No directory selected)';
+                targetDirDisplay.title = msg.path || 'No directory selected';
+            } else if (msg.type === 'workspaceFiles') {
                 wsFiles = msg.files || [];
-            } else if (msg.type === 'activeFileInserted') {
-                if (msg.filePath) {
-                    goalInput.value = (goalInput.value ? goalInput.value + ' ' : '') + '@' + msg.filePath + ' ';
-                    goalInput.focus();
-                }
+            } else if (msg.type === 'activeFileInserted' && msg.filePath) {
+                goalInput.value = (goalInput.value ? goalInput.value + ' ' : '') + '@' + msg.filePath + ' ';
+                goalInput.focus();
             } else if (msg.type === 'providerUpdated') {
                 providerBadge.innerText = msg.provider;
             } else if (msg.type === 'taskStarted') {
                 setLockedState(true);
             } else if (msg.type === 'taskRestoreState') {
                 const t = msg.task;
-                if (!t) return;
-                if (t.goal && !goalInput.value) {
-                    goalInput.value = t.goal;
+                if (msg.targetDirectory && targetDirDisplay) {
+                    targetDirDisplay.innerText = msg.targetBasename || msg.targetDirectory;
+                    targetDirDisplay.title = msg.targetDirectory;
                 }
+                if (!t) return;
+                if (t.goal && !goalInput.value) goalInput.value = t.goal;
                 if (t.status === 'running') {
                     setLockedState(true, t.startTime);
                     statusBox.className = 'status-box';
@@ -228,10 +222,7 @@ function getComposerScripts() {
 
         function renderStagedFiles(files) {
             stagedTitle.innerText = 'Staged Changes (' + files.length + ')';
-            if (files.length === 0) {
-                stagedCard.style.display = 'none';
-                return;
-            }
+            if (files.length === 0) { stagedCard.style.display = 'none'; return; }
             stagedCard.style.display = 'block';
             stagedList.innerHTML = '';
 
@@ -244,10 +235,7 @@ function getComposerScripts() {
                 nameSpan.style.cursor = 'pointer';
                 nameSpan.style.textDecoration = 'underline';
                 nameSpan.onclick = () => vscode.postMessage({
-                    command: 'viewDiff',
-                    filePath: f.file_path,
-                    stagedContent: f.staged_content,
-                    originalContent: f.original_content
+                    command: 'viewDiff', filePath: f.file_path, stagedContent: f.staged_content, originalContent: f.original_content
                 });
 
                 const actionDiv = document.createElement('div');
@@ -258,10 +246,7 @@ function getComposerScripts() {
                 diffBtn.className = 'btn-sm btn-sec';
                 diffBtn.innerText = 'Diff';
                 diffBtn.onclick = () => vscode.postMessage({
-                    command: 'viewDiff',
-                    filePath: f.file_path,
-                    stagedContent: f.staged_content,
-                    originalContent: f.original_content
+                    command: 'viewDiff', filePath: f.file_path, stagedContent: f.staged_content, originalContent: f.original_content
                 });
 
                 const acceptBtn = document.createElement('button');

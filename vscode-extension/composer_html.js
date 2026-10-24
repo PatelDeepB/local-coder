@@ -22,6 +22,15 @@ ${getComposerStyles()}
         <span id="providerBadge" class="badge" title="Click to switch intelligence tier">${currentProvider}</span>
     </div>
 
+    <div class="dir-bar">
+        <div class="dir-info" id="dirInfoClickable" title="Target parent directory where changes will be applied">
+            <span class="dir-icon">&#128193;</span>
+            <span class="dir-label">Target:</span>
+            <span id="targetDirDisplay" class="dir-path" title="No directory selected">Loading...</span>
+        </div>
+        <button id="changeDirBtn" type="button" class="btn-xs" title="Select existing or create new directory">Change...</button>
+    </div>
+
     <div class="input-wrap">
         <textarea id="goalInput" placeholder="Describe task (e.g., 'Refactor @app.py to use async'). Press Ctrl+Enter to execute. Type @ to pin files..."></textarea>
         <div id="mentionBox" class="mention-dropdown"></div>

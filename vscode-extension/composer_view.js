@@ -1,6 +1,6 @@
 /**
  * LOCAL-CODER Composer Sidebar Webview Provider
- * Manages task submission, prompt locking, @file mentions, and interactive diff reviews.
+ * Manages task submission, prompt locking, directory targeting, @file mentions, and interactive diff reviews.
  */
 
 const vscode = require('vscode');
@@ -13,6 +13,8 @@ class LocalCoderComposerViewProvider {
     constructor(extensionUri) {
         this._extensionUri = extensionUri;
         this._activeAbortController = null;
+        const wsFolders = vscode.workspace.workspaceFolders;
+        this._targetDirectory = (wsFolders && wsFolders.length > 0) ? wsFolders[0].uri.fsPath : '';
         this._taskState = {
             status: 'idle',
             goal: '',
@@ -39,11 +41,19 @@ class LocalCoderComposerViewProvider {
             switch (message.command) {
                 case 'getTaskState':
                     if (this._view) {
-                        this._view.webview.postMessage({ type: 'taskRestoreState', task: this._taskState });
+                        this._view.webview.postMessage({
+                            type: 'taskRestoreState',
+                            task: this._taskState,
+                            targetDirectory: this._targetDirectory,
+                            targetBasename: path.basename(this._targetDirectory) || this._targetDirectory
+                        });
                     }
                     break;
                 case 'syncPrompt':
                     this._taskState.goal = message.goal || '';
+                    break;
+                case 'selectTargetDirectory':
+                    await this._handleSelectDirectory(baseUrl);
                     break;
                 case 'submitTask':
                     await this._handleSubmitTask(baseUrl, message.goal);
@@ -95,11 +105,76 @@ class LocalCoderComposerViewProvider {
         }
     }
 
+    async _setTargetDirectory(baseUrl, newDir) {
+        if (!newDir) return;
+        this._targetDirectory = newDir;
+        if (!fs.existsSync(newDir)) {
+            try {
+                fs.mkdirSync(newDir, { recursive: true });
+            } catch {}
+        }
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'targetDirectoryUpdated',
+                path: this._targetDirectory,
+                basename: path.basename(this._targetDirectory) || this._targetDirectory,
+            });
+        }
+        try {
+            await sendPostRequest(`${baseUrl}/api/v1/workspace/set`, { workspace_root: this._targetDirectory }, 2000);
+        } catch {}
+        await this._handleLoadFiles(baseUrl);
+    }
+
+    async _handleSelectDirectory(baseUrl) {
+        const wsFolders = vscode.workspace.workspaceFolders;
+        const currentRoot = (wsFolders && wsFolders.length > 0) ? wsFolders[0].uri.fsPath : '';
+
+        const pick = await vscode.window.showQuickPick([
+            { label: '$(folder) Select Existing Folder...', description: 'Browse and choose directory' },
+            { label: '$(new-folder) Create New Project Folder...', description: 'Create new project folder' },
+            { label: '$(root-folder) Reset to Workspace Root', description: currentRoot || 'Workspace root' }
+        ], { placeHolder: 'Select target directory for agent:' });
+
+        if (!pick) return;
+
+        if (pick.label.includes('Reset to Workspace Root') && currentRoot) {
+            await this._setTargetDirectory(baseUrl, currentRoot);
+            vscode.window.showInformationMessage(`Target directory: ${currentRoot}`);
+        } else if (pick.label.includes('Select Existing Folder')) {
+            const defUri = this._targetDirectory ? vscode.Uri.file(this._targetDirectory) : (currentRoot ? vscode.Uri.file(currentRoot) : undefined);
+            const chosen = await vscode.window.showOpenDialog({
+                canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
+                openLabel: 'Select Directory', defaultUri: defUri, title: 'Choose Target Directory'
+            });
+            if (chosen && chosen.length > 0) {
+                await this._setTargetDirectory(baseUrl, chosen[0].fsPath);
+                vscode.window.showInformationMessage(`Target directory: ${chosen[0].fsPath}`);
+            }
+        } else if (pick.label.includes('Create New Project Folder')) {
+            const baseDir = this._targetDirectory || currentRoot || '';
+            const folderName = await vscode.window.showInputBox({
+                prompt: 'Enter folder name or absolute path for new project:',
+                placeHolder: 'e.g. my_new_app'
+            });
+            if (folderName && folderName.trim()) {
+                const target = path.isAbsolute(folderName.trim()) ? folderName.trim() : path.join(baseDir, folderName.trim());
+                try {
+                    fs.mkdirSync(target, { recursive: true });
+                    await this._setTargetDirectory(baseUrl, target);
+                    vscode.window.showInformationMessage(`Created target directory: ${target}`);
+                } catch (err) {
+                    vscode.window.showErrorMessage(`Failed to create directory: ${err.message}`);
+                }
+            }
+        }
+    }
+
     _handleInsertActiveFile() {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
-        const wsRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-        const relPath = path.relative(wsRoot, editor.document.fileName).replace(/\\/g, '/');
+        const activeRoot = this._targetDirectory || (vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '');
+        const relPath = path.relative(activeRoot, editor.document.fileName).replace(/\\/g, '/');
         if (this._view) {
             this._view.webview.postMessage({ type: 'activeFileInserted', filePath: relPath });
         }
@@ -117,11 +192,11 @@ class LocalCoderComposerViewProvider {
     async _handleSubmitTask(baseUrl, rawGoal) {
         let enrichedGoal = rawGoal;
         const mentions = rawGoal.match(/@([a-zA-Z0-9_\-\.\/]+)/g) || [];
-        const wsRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
+        const activeDir = this._targetDirectory || (vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '');
 
         for (const m of mentions) {
             const relPath = m.substring(1);
-            const fullPath = path.join(wsRoot, relPath);
+            const fullPath = path.join(activeDir, relPath);
             if (fs.existsSync(fullPath)) {
                 try {
                     const content = fs.readFileSync(fullPath, 'utf8');
@@ -146,7 +221,7 @@ class LocalCoderComposerViewProvider {
 
             const payload = {
                 goal: enrichedGoal,
-                output_directory: wsRoot || undefined,
+                output_directory: activeDir || undefined,
             };
             const res = await sendPostRequest(`${baseUrl}/api/v1/task`, payload, 300000, controller.signal);
             this._taskState.status = 'completed';
@@ -174,10 +249,9 @@ class LocalCoderComposerViewProvider {
 
     async _handleLoadFiles(baseUrl) {
         try {
-            const wsFolders = vscode.workspace.workspaceFolders;
-            const wsRoot = wsFolders && wsFolders.length > 0 ? wsFolders[0].uri.fsPath : null;
-            if (wsRoot) {
-                await sendPostRequest(`${baseUrl}/api/v1/workspace/set`, { workspace_root: wsRoot }, 1000).catch(() => {});
+            const activeDir = this._targetDirectory || (vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : null);
+            if (activeDir) {
+                await sendPostRequest(`${baseUrl}/api/v1/workspace/set`, { workspace_root: activeDir }, 1000).catch(() => {});
             }
             const res = await sendGetRequest(`${baseUrl}/api/v1/workspace/files`, 2000);
             if (this._view) this._view.webview.postMessage({ type: 'workspaceFiles', files: res.files || [] });
@@ -196,8 +270,8 @@ class LocalCoderComposerViewProvider {
     }
 
     async _handleViewDiff(filePath, stagedContent, originalContent) {
-        const wsRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-        const tempDir = path.join(wsRoot, '.localcoder', 'staged');
+        const activeDir = this._targetDirectory || (vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : '');
+        const tempDir = path.join(activeDir, '.localcoder', 'staged');
         fs.mkdirSync(tempDir, { recursive: true });
 
         const origTempFile = path.join(tempDir, 'orig_' + path.basename(filePath));
