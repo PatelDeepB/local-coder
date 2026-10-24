@@ -228,6 +228,12 @@ class LocalCoderComposerViewProvider {
             this._taskState.result = res;
             if (this._view) this._view.webview.postMessage({ type: 'taskComplete', result: res });
             vscode.commands.executeCommand('local-coder.notifyTaskState', 'completed');
+            if (res.modified_files && res.modified_files.length > 0) {
+                const targetPath = path.join(activeDir, res.modified_files[0]);
+                if (fs.existsSync(targetPath)) {
+                    vscode.workspace.openTextDocument(targetPath).then(doc => vscode.window.showTextDocument(doc, { preview: false }));
+                }
+            }
             await this._handleLoadStaged(baseUrl);
         } catch (err) {
             this._taskState.status = 'error';
