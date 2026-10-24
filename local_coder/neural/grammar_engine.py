@@ -20,6 +20,18 @@ def build_tool_calling_grammar(tools: Sequence[Any]) -> str:
     return gbnf
 
 
+def _clean_diff_markers(code: str) -> str:
+    """Extracts clean replacement code if conflict markers or diff blocks are present."""
+    m = re.search(
+        r'<{5,9}[^\r\n]*[\r\n]*(.*?)={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|>{5,9}|$)',
+        code,
+        flags=re.DOTALL,
+    )
+    if m:
+        return m.group(2).strip()
+    return code
+
+
 def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
     """Safely extracts tool name and arguments dictionary from model output."""
     clean = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
@@ -31,6 +43,23 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         content = m_xml.group(2).strip()
         content = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", content)
         content = re.sub(r"\n```$", "", content)
+
+        # Conflict and search-replace hunk auto-recovery
+        m_hunk = re.search(
+            r'<{5,9}[^\r\n]*[\r\n]*(.*?)={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|>{5,9}|$)',
+            content,
+            flags=re.DOTALL,
+        )
+        if m_hunk:
+            search_b = m_hunk.group(1).strip()
+            replace_b = m_hunk.group(2).strip()
+            if search_b and not search_b.startswith("...") and len(search_b) > 10:
+                return "apply_search_replace_patch", {
+                    "file_path": path,
+                    "search_block": search_b,
+                    "replace_block": replace_b,
+                }
+            content = replace_b
         return "write_file", {"file_path": path, "content": content}
 
     # Format 1B: XML tag with content attribute <write_file path="..." content='...'>
@@ -42,7 +71,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         raw_c = m_xml_attr.group(3).strip()
         raw_c = re.sub(r'["\']\s*[\}>]+$', "", raw_c)
         clean_c = raw_c.replace(r"\'", "'").replace(r'\"', '"').replace(r"\n", "\n")
-        return "write_file", {"file_path": path, "content": clean_c}
+        return "write_file", {"file_path": path, "content": _clean_diff_markers(clean_c)}
 
     # Format 2: XML tag <run_terminal> ... </run_terminal>
     m_cmd = re.search(r"<run_terminal>(.*?)(?:</run_terminal>|$)", clean, flags=re.DOTALL)
@@ -53,7 +82,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
     m_file = re.search(r"(?:FILE|PATH|WRITE_FILE):\s*([^\n\r]+)[\r\n]+```(?:[a-zA-Z0-9_-]+)?[\r\n](.*?)```", clean, flags=re.DOTALL)
     if m_file:
         path = m_file.group(1).strip().strip("`'\" ")
-        content = m_file.group(2).strip()
+        content = _clean_diff_markers(m_file.group(2).strip())
         return "write_file", {"file_path": path, "content": content}
 
     # Format 4: Search-Replace Patch Hunk block
@@ -76,7 +105,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         clean_patch_code = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", clean_patch_code)
         clean_patch_code = re.sub(r"\n```$", "", clean_patch_code)
         if clean_patch_code:
-            return "write_file", {"file_path": patch_path, "content": clean_patch_code}
+            return "write_file", {"file_path": patch_path, "content": _clean_diff_markers(clean_patch_code)}
 
     m_patch = re.search(
         r'(?:PATCH|DIFF|FILE):\s*([^\n\r]+).*?<{5,9}\s*(?:SEARCH|HEAD|ORIGINAL|BEFORE)?[^\r\n]*[\r\n]+(.*?)[\r\n]+={5,9}[^\r\n]*[\r\n]+(.*?)(?:[\r\n]+>{5,9}|$)',
@@ -101,14 +130,14 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
     )
     if m_comment_file:
         file_path = m_comment_file.group(1).strip()
-        code_content = m_comment_file.group(2).strip()
+        code_content = _clean_diff_markers(m_comment_file.group(2).strip())
         return "write_file", {"file_path": file_path, "content": code_content}
 
     # Format 6: Markdown code block with filename mentioned in preceding prose
     m_code_block = re.search(r"```([a-zA-Z0-9_-]+)?\s*[\r\n]+(.*?)```", clean, flags=re.DOTALL)
     if m_code_block:
         lang = (m_code_block.group(1) or "").lower()
-        block_code = m_code_block.group(2).strip()
+        block_code = _clean_diff_markers(m_code_block.group(2).strip())
         before_text = clean[: m_code_block.start()]
         m_prev_file = re.search(r"\b([a-zA-Z0-9_\-]+\.(py|js|ts|jsx|tsx|html|css|json|sh))\b", before_text)
         if m_prev_file and len(block_code) > 10:
@@ -132,7 +161,10 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
             payload = json.loads(cand, strict=False)
         except Exception:
             try:
-                payload = ast.literal_eval(cand)
+                cand_py = re.sub(r"\btrue\b", "True", cand)
+                cand_py = re.sub(r"\bfalse\b", "False", cand_py)
+                cand_py = re.sub(r"\bnull\b", "None", cand_py)
+                payload = ast.literal_eval(cand_py)
             except Exception:
                 pass
 
@@ -168,7 +200,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
                     clean_content = raw_c.encode("utf-8").decode("unicode_escape")
                 except Exception:
                     clean_content = raw_c.replace(r'\"', '"').replace(r"\n", "\n").replace(r"\\", "\\")
-                return "write_file", {"file_path": file_path, "content": clean_content}
+                return "write_file", {"file_path": file_path, "content": _clean_diff_markers(clean_content)}
 
         elif tool_name in ["read_file", "list_dir"]:
             m_path = re.search(r'["\'](?:file_path|dir_path)["\']:\s*["\']([^"\']+)["\']', clean)

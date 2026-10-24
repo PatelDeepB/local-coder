@@ -10,6 +10,7 @@ import uuid
 
 from local_coder.agent.agent_state import AgentSessionState, AgentStep, TaskStatus
 from local_coder.agent.compiler_gate import CompilerGate
+from local_coder.agent.diagnostic_healer import DiagnosticHealer
 from local_coder.agent.execution_loop import AgentExecutionLoop
 from local_coder.agent.context_builder import WorkspaceContextBuilder
 from local_coder.agent.fast_apply import FastApplyEngine, FastApplyResult
@@ -180,6 +181,16 @@ class LocalCoderOrchestrator:
             m_s = re.search(r"\b(calculator|converter|analyzer|parser|service|helper|scraper|server|script)\b", goal_lower)
             if m_s and any(w in goal_lower for w in ["python", "py", "function", "class", "script"]):
                 target_f = f"{m_s.group(1)}.py"
+
+        # Step 0A: Autonomous Diagnostic and Runtime Healer for multi-file repairs
+        repair_kws = ["fix", "repair", "debug", "resolve", "make it work", "clean", "broken", "issue", "diagnos"]
+        is_repair = any(re.search(rf"\b{kw}\b", goal_lower) for kw in repair_kws)
+        if is_repair and not target_f:
+            healer = DiagnosticHealer(runner=self.runner, workspace=self.shadow_workspace)
+            session = healer.heal_workspace(root_dir=self.root_dir, user_goal=user_goal)
+            if session.modified_files and auto_commit:
+                self.shadow_workspace.commit_all()
+            return session
 
         if target_f:
             fast_res = self.run_fast_apply(target_f, user_goal, output_directory)

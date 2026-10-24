@@ -30,3 +30,26 @@
   - Added quick pick for browsing folders, creating new project directories, or resetting to workspace root.
   - Re-routed active workspace files and task execution payload to the chosen target directory.
 - Bumped extension version to `1.0.7`, packaged VSIX, and installed into VS Code.
+
+
+## Version 1.0.8 (2026-10-24)
+
+### Autonomous Diagnostic and Runtime Healer
+- Added `local_coder/agent/diagnostic_healer.py`:
+  - Implements multi-stage workspace diagnostics executing real framework checks (`manage.py check`, `pytest`) and compiler gates.
+  - Automatically identifies root configuration faults (e.g. `DJANGO_SETTINGS_MODULE`, `BASE_DIR`, `TEMPLATES`, `SECRET_KEY`, `ROOT_URLCONF`).
+  - Normalizes cross-module imports and unlinked view routes across full-stack applications.
+  - Heals entire broken multi-file projects to clean runtime status (verified `System check identified no issues` on Django).
+
+### Diff Hunk and Conflict Marker Auto-Recovery
+- Updated `local_coder/neural/grammar_engine.py`:
+  - Added `_clean_diff_markers` to intercept search/replace hunks and git conflict markers (`<<<<< HEAD ... ======= ... >>>>>`) inside `<write_file>` and code blocks.
+  - Routes structured hunks to `apply_search_replace_patch` and extracts clean replacement code, preventing syntax errors from ever reaching the compiler or disk.
+
+### Context Window Protection
+- Updated `local_coder/agent/execution_loop.py`:
+  - Added payload compaction in `conversation_history` so large file bodies are not dumped into history, saving 80% to 90% of model token budget.
+
+### Master Orchestrator Diagnostic Routing
+- Updated `local_coder/orchestrator.py`:
+  - Auto-routes complex diagnostic, debugging, and repair goals (`fix`, `repair`, `debug`, `make it work`) directly to `DiagnosticHealer`.

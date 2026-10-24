@@ -201,7 +201,10 @@ class AgentExecutionLoop:
             if on_step_callback:
                 on_step_callback(step)
 
-            conversation_history.append(f"Step {step_idx} Action: {tool_name}({tool_args})\nObservation:\n{obs}")
+            safe_args = dict(tool_args)
+            if "content" in safe_args and len(str(safe_args["content"])) > 80:
+                safe_args["content"] = f"<{len(str(safe_args['content']))} chars>"
+            conversation_history.append(f"Step {step_idx} Action: {tool_name}({safe_args})\nObservation:\n{obs}")
 
         if session.status != TaskStatus.COMPLETED:
             session.status = TaskStatus.COMPLETED if len(session.completed_steps) > 0 else TaskStatus.FAILED
