@@ -202,3 +202,39 @@ def test_should_execute_task_with_output_directory() -> None:
     mock_orch.set_workspace.assert_called_once_with("/tmp/my_project")
 
 
+def test_should_execute_fast_apply_endpoint() -> None:
+    # Arrange
+    from local_coder.agent.fast_apply import FastApplyResult
+    mock_orch = MagicMock()
+    mock_orch.run_fast_apply.return_value = FastApplyResult(
+        file_path="math_utils.py",
+        is_success=True,
+        staged_content="def add(a, b): return a + b\ndef sub(a, b): return a - b",
+        diff="@@ -1 +1,2 @@\n+def sub(a, b): return a - b",
+        elapsed_seconds=0.45,
+    )
+    api_module.orchestrator_instance = mock_orch
+
+    client = TestClient(app)
+    payload = {
+        "file_path": "math_utils.py",
+        "instruction": "add sub function",
+    }
+
+    # Act
+    resp = client.post("/api/v1/fast-apply", json=payload)
+
+    # Assert
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["file_path"] == "math_utils.py"
+    assert data["is_success"] is True
+    assert "sub" in data["diff"]
+    mock_orch.run_fast_apply.assert_called_once_with(
+        file_path="math_utils.py",
+        instruction="add sub function",
+        output_directory=None,
+    )
+
+
+

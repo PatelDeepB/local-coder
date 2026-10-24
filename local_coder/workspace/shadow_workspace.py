@@ -28,7 +28,7 @@ class ShadowWorkspace:
         target_path = (self.root_dir / relative_path).resolve()
         orig = None
         if target_path.exists():
-            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(target_path, "r", encoding="utf-8-sig", errors="ignore") as f:
                 orig = f.read()
 
         self._staged_edits[target_path] = StagedFileEdit(
@@ -43,7 +43,7 @@ class ShadowWorkspace:
         target_path = (self.root_dir / relative_path).resolve()
         orig = None
         if target_path.exists():
-            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(target_path, "r", encoding="utf-8-sig", errors="ignore") as f:
                 orig = f.read()
 
         self._staged_edits[target_path] = StagedFileEdit(
@@ -61,7 +61,7 @@ class ShadowWorkspace:
             return None if edit.is_deletion else edit.staged_content
 
         if target_path.exists():
-            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(target_path, "r", encoding="utf-8-sig", errors="ignore") as f:
                 return f.read()
         return None
 

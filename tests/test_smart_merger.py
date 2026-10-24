@@ -119,3 +119,19 @@ def test_write_file_tool_should_preserve_existing_file_contents_on_partial_edit(
     assert staged is not None
     assert "def calculate_force" in staged
     assert "def calculate_work" in staged
+
+
+def test_should_handle_utf8_bom_and_short_files_safely() -> None:
+    # Arrange
+    existing = "\ufeffdef add(a: int, b: int) -> int:\n    return a + b\n"
+    incoming = "def sub(a: int, b: int) -> int:\n    return a - b\n"
+    merger = SmartCodeMerger()
+
+    # Act
+    merged = merger.merge_source_code(existing, incoming, file_path="calc.py")
+
+    # Assert
+    assert "def add" in merged
+    assert "def sub" in merged
+    assert "\ufeff" not in merged
+

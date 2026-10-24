@@ -8,11 +8,14 @@ import re
 import time
 import uuid
 
-from local_coder.agent.execution_loop import AgentExecutionLoop
 from local_coder.agent.agent_state import AgentSessionState, AgentStep, TaskStatus
 from local_coder.agent.compiler_gate import CompilerGate
+from local_coder.agent.execution_loop import AgentExecutionLoop
+from local_coder.agent.context_builder import WorkspaceContextBuilder
+from local_coder.agent.fast_apply import FastApplyEngine, FastApplyResult
 from local_coder.agent.hierarchical_planner import HierarchicalPlanner
 from local_coder.agent.manifest_synthesizer import ManifestSynthesizer
+from local_coder.agent.session_disk_flusher import SessionDiskFlusher
 from local_coder.ast_engine.tree_indexer import TreeIndexer
 from local_coder.core.config import CONFIG
 from local_coder.core.memory_guard import MemoryGuard
@@ -120,6 +123,7 @@ class LocalCoderOrchestrator:
             compiler_gate=self.compiler_gate,
             knowledge_db=self.coding_knowledge,
         )
+        self.fast_apply = FastApplyEngine(runner=self.runner, workspace=self.shadow_workspace)
 
     def set_workspace(self, workspace_root: str | Path) -> None:
         """Dynamically re-roots the orchestrator and shadow workspace to a new workspace directory."""
@@ -130,6 +134,22 @@ class LocalCoderOrchestrator:
     def initialize_codebase(self) -> int:
         """Indexes the repository into HDC vector store and symbol graph. Returns symbol count."""
         return self.tree_indexer.index_directory(self.root_dir)
+
+    def run_fast_apply(
+        self, file_path: str, instruction: str, output_directory: Optional[str | Path] = None
+    ) -> FastApplyResult:
+        """Executes single-pass fast apply edit without multi-step loop overhead."""
+        if output_directory:
+            self.set_workspace(output_directory)
+        self.memory_guard.assert_within_budget()
+        res = self.fast_apply.apply_update(file_path=file_path, instruction=instruction)
+        if res.is_success:
+            run_dir = Path(output_directory).resolve() if output_directory else self.root_dir
+            target_file = run_dir / file_path
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(target_file, "w", encoding="utf-8") as f:
+                f.write(res.staged_content)
+        return res
 
     def run_coding_task(
         self,
@@ -143,6 +163,32 @@ class LocalCoderOrchestrator:
 
         self.memory_guard.assert_within_budget()
         rules = self.rules_engine.discover_rules() or ""
+
+        # Step 0: Fast Apply auto-routing for single-file precision edits
+        m_file = re.search(r"@([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)|(?:in|for|into|modify|update|edit)\s+([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)", user_goal, re.IGNORECASE)
+        target_f = (m_file.group(1) or m_file.group(2)) if m_file else None
+        if target_f and (self.root_dir / target_f).is_file():
+            fast_res = self.run_fast_apply(target_f, user_goal, output_directory)
+            if fast_res.is_success:
+                return AgentSessionState(
+                    session_id=str(uuid.uuid4())[:8],
+                    user_goal=user_goal,
+                    status=TaskStatus.COMPLETED,
+                    output_directory=str(self.root_dir),
+                    modified_files=[target_f],
+                    final_output=f"Fast Apply completed in {fast_res.elapsed_seconds:.2f}s:\n{fast_res.diff}",
+                    completed_steps=[
+                        AgentStep(
+                            step_number=1,
+                            thought=f"Fast Apply 1-pass edit on {target_f}",
+                            action_tool="fast_apply",
+                            action_arguments={"file_path": target_f},
+                            observation=f"Successfully applied non-destructive update to {target_f}.",
+                            is_successful=True,
+                            elapsed_seconds=fast_res.elapsed_seconds,
+                        )
+                    ],
+                )
 
         # Step 1: Execute synthesis engine
         goal_lower = user_goal.lower()
@@ -185,34 +231,12 @@ class LocalCoderOrchestrator:
             session.status = TaskStatus.COMPLETED
             session.final_output = f"Successfully generated full project ({len(manifest_files)} files): {', '.join(manifest_files)}"
         else:
-            existing_files = [
-                str(p.relative_to(self.root_dir)).replace("\\", "/")
-                for p in self.root_dir.glob("**/*")
-                if p.is_file()
-                and not any(
-                    part.startswith(".")
-                    or part in ["venv", "__pycache__", "node_modules", "workspace_runs", "dist", "build"]
-                    for part in p.parts
-                )
-            ]
-            if existing_files:
-                repo_inv = "Existing Project Files in Workspace:\n" + "\n".join(f"- {f}" for f in existing_files[:30])
-            else:
-                repo_inv = "Existing Project Files in Workspace: (None - new or empty project)"
-
-            schema = self.ast_compactor.build_workspace_schema(self.root_dir, self.shadow_workspace)
-            if schema and len(schema) > 1800:
-                schema = schema[:1800] + "\n... [truncated schema]"
-            schema_block = f"\n\nVirtual Workspace Schema (64K token context compressed):\n{schema}" if schema else ""
-            mod_rules = (
-                f"{repo_inv}{schema_block}\n\n"
-                f"CRITICAL RULES:\n"
-                f"1. To modify an existing file, use <patch file=\"path\"> or <write_file path=\"path\"> at its exact path.\n"
-                f"2. To create a new file or add a new module/test requested by the user, use <write_file path=\"path\">.\n"
-                f"3. NEVER use write_file with '# Existing code...' stubs. Always provide complete working code or precision patches.\n"
-                f"4. Preserve all existing classes and functions when updating files."
+            full_rules = WorkspaceContextBuilder.build_context_rules(
+                root_dir=self.root_dir,
+                shadow_workspace=self.shadow_workspace,
+                ast_compactor=self.ast_compactor,
+                base_rules=rules,
             )
-            full_rules = f"{rules}\n\n{mod_rules}" if rules else mod_rules
             session = self.agent_loop.execute_task(user_goal=user_goal, rules_context=full_rules)
 
         # Step 2: Determine run directory
@@ -221,44 +245,18 @@ class LocalCoderOrchestrator:
         session.output_directory = str(run_dir)
 
         # Step 3: Physically write all staged files to disk
-        saved_files: list[str] = []
-        for p, edit in list(self.shadow_workspace._staged_edits.items()):
-            try:
-                rel = p.relative_to(self.root_dir)
-            except ValueError:
-                rel = Path(str(p).replace(str(self.root_dir), "").lstrip("/\\"))
-
-            target_file = run_dir / rel
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(target_file, "w", encoding="utf-8") as f:
-                f.write(edit.staged_content)
-            saved_files.append(str(rel).replace("\\", "/"))
-
-        session.modified_files = saved_files
+        session.modified_files = SessionDiskFlusher.flush_staged_files(
+            workspace=self.shadow_workspace,
+            root_dir=self.root_dir,
+            destination_dir=run_dir,
+        )
 
         # Step 4: Write execution summary to disk (.localcoder subdirectory to avoid project clutter)
-        summary_payload = {
-            "session_id": session.session_id,
-            "user_goal": session.user_goal,
-            "status": session.status.value,
-            "output_directory": session.output_directory,
-            "modified_files": session.modified_files,
-            "final_output": session.final_output,
-            "steps": [
-                {
-                    "step_number": s.step_number,
-                    "action_tool": s.action_tool,
-                    "action_arguments": s.action_arguments,
-                    "observation": s.observation,
-                    "elapsed_seconds": s.elapsed_seconds,
-                }
-                for s in session.completed_steps
-            ],
-        }
-        summary_dir = run_dir / ".localcoder" if output_directory else run_dir
-        summary_dir.mkdir(parents=True, exist_ok=True)
-        with open(summary_dir / "execution_summary.json", "w", encoding="utf-8") as f:
-            json.dump(summary_payload, f, indent=2)
+        SessionDiskFlusher.write_execution_summary(
+            session=session,
+            run_dir=run_dir,
+            output_directory=output_directory,
+        )
 
         # Step 5: If auto_commit enabled, commit to workspace root as well
         if auto_commit and self.shadow_workspace.has_staged_edits:

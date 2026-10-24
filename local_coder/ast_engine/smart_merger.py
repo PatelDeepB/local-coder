@@ -12,9 +12,10 @@ class SmartCodeMerger:
     def merge_source_code(self, existing_code: str, incoming_code: str, file_path: str = "") -> str:
         """Merges incoming updates into existing code, preserving all existing functions, classes, and comments."""
         if not existing_code or not existing_code.strip():
-            return incoming_code
+            return incoming_code.lstrip("\ufeff")
 
-        clean_incoming = incoming_code.strip()
+        existing_code = existing_code.lstrip("\ufeff")
+        clean_incoming = incoming_code.lstrip("\ufeff").strip()
         if not clean_incoming:
             return existing_code
 
@@ -156,8 +157,7 @@ class SmartCodeMerger:
         orig_lines = set(l.strip() for l in existing_code.splitlines() if l.strip())
         incoming_lines = set(l.strip() for l in incoming_code.splitlines() if l.strip())
 
-        if len(existing_code) > 200 and len(incoming_code) < len(existing_code) * 0.7:
-            if not incoming_lines.issuperset(orig_lines):
-                return existing_code.rstrip() + "\n\n" + incoming_code.strip() + "\n"
+        if orig_lines and not incoming_lines.issuperset(orig_lines):
+            return existing_code.rstrip() + "\n\n" + incoming_code.strip() + "\n"
 
         return incoming_code

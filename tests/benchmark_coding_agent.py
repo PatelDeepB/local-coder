@@ -253,7 +253,8 @@ def test_process_transaction():
         """Benchmarks the DeepSeek-R1 1.5B GGUF model runner on CPU."""
         assert self.orchestrator is not None
         runner = self.orchestrator.runner
-        if runner._is_mock:
+        is_mock = getattr(runner, "_is_mock", False) or getattr(getattr(runner, "local_runner", None), "_is_mock", False)
+        if is_mock:
             self.metrics.append(
                 BenchmarkMetric(
                     operation_name="GGUF CPU SIMD Reasoning Engine",
