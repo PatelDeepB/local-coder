@@ -104,3 +104,52 @@ def test_should_format_repair_prompt_with_compiler_feedback() -> None:
     assert "File: calc.py" in prompt
     assert "python_compiler" in prompt
     assert "def calc(): return 1 /" in prompt
+
+
+def test_should_reject_function_stub_with_pass() -> None:
+    # Arrange
+    gate = CompilerGate()
+    code_with_pass = "def add(a: int, b: int) -> int:\n    pass\n"
+
+    # Act
+    report = gate.check_file_content("math_calc.py", code_with_pass)
+
+    # Assert
+    assert report.is_valid is False
+    assert len(report.errors) == 1
+    assert report.errors[0].source == "stub_gate"
+    assert "contains stub body" in report.errors[0].message
+
+
+def test_should_reject_function_stub_with_ellipsis() -> None:
+    # Arrange
+    gate = CompilerGate()
+    code_with_ellipsis = "def subtract(a: int, b: int) -> int:\n    ...\n"
+
+    # Act
+    report = gate.check_file_content("math_calc.py", code_with_ellipsis)
+
+    # Assert
+    assert report.is_valid is False
+    assert len(report.errors) == 1
+    assert report.errors[0].source == "stub_gate"
+    assert "contains stub body" in report.errors[0].message
+
+
+def test_should_allow_abstractmethod_stubs() -> None:
+    # Arrange
+    gate = CompilerGate()
+    code_with_abstract = (
+        "from abc import ABC, abstractmethod\n\n"
+        "class Calculator(ABC):\n"
+        "    @abstractmethod\n"
+        "    def calculate(self, x: int) -> int:\n"
+        "        pass\n"
+    )
+
+    # Act
+    report = gate.check_file_content("calc_interface.py", code_with_abstract)
+
+    # Assert
+    assert report.is_valid is True
+    assert len(report.errors) == 0

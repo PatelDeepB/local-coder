@@ -1,8 +1,6 @@
 """Active compiler and LSP diagnostic gate for real-time error detection and self-repair."""
 
 import ast
-from dataclasses import dataclass, field
-from enum import Enum
 from html.parser import HTMLParser
 import json
 from pathlib import Path
@@ -10,42 +8,23 @@ import subprocess
 import tempfile
 from typing import Optional
 
+from local_coder.agent.compiler_helpers import (
+    check_bracket_balance,
+    check_missing_common_imports,
+)
+from local_coder.agent.compiler_types import (
+    DiagnosticItem,
+    DiagnosticReport,
+    DiagnosticSeverity,
+)
 
-class DiagnosticSeverity(str, Enum):
-    """Severity classification for code diagnostics."""
-
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-
-
-@dataclass(frozen=True)
-class DiagnosticItem:
-    """A single diagnostic issue surfaced by a compiler, linter, or LSP."""
-
-    file_path: str
-    line: int
-    column: int
-    message: str
-    severity: DiagnosticSeverity = DiagnosticSeverity.ERROR
-    source: str = "compiler"
-
-
-@dataclass(frozen=True)
-class DiagnosticReport:
-    """Aggregate compilation and diagnostic report for a file or project."""
-
-    is_valid: bool
-    errors: list[DiagnosticItem] = field(default_factory=list)
-    warnings: list[DiagnosticItem] = field(default_factory=list)
-
-    @property
-    def summary_message(self) -> str:
-        """Returns concise single-line summary of diagnostic errors."""
-        if self.is_valid or not self.errors:
-            return "All compiler diagnostics clean."
-        first = self.errors[0]
-        return f"{first.file_path}:{first.line} [{first.source}] {first.message}"
+# Re-export types for backward compatibility
+__all__ = [
+    "CompilerGate",
+    "DiagnosticItem",
+    "DiagnosticReport",
+    "DiagnosticSeverity",
+]
 
 
 class CompilerGate:
@@ -72,13 +51,16 @@ class CompilerGate:
         return DiagnosticReport(is_valid=True)
 
     def _check_python(self, file_path: str, content: str) -> DiagnosticReport:
-        """Checks Python code via AST parsing and bytecode compilation."""
+        """Checks Python code via AST parsing, bytecode compilation, and zero-stub enforcement."""
         try:
             tree = ast.parse(content, filename=file_path)
             compile(content, file_path, "exec")
-            missing_diags = self._check_missing_common_imports(file_path, content, tree)
+            missing_diags = check_missing_common_imports(file_path, content, tree)
             if missing_diags:
                 return DiagnosticReport(is_valid=False, errors=missing_diags)
+            stub_diags = self._check_stubs(file_path, tree)
+            if stub_diags:
+                return DiagnosticReport(is_valid=False, errors=stub_diags)
             return DiagnosticReport(is_valid=True)
         except SyntaxError as exc:
             err = DiagnosticItem(
@@ -99,45 +81,54 @@ class CompilerGate:
             )
             return DiagnosticReport(is_valid=False, errors=[err])
 
-    def _check_missing_common_imports(
-        self, file_path: str, content: str, tree: ast.AST
-    ) -> list[DiagnosticItem]:
-        """Detects commonly missing framework imports before disk commits."""
-        imported_names = set()
+    def _check_stubs(self, file_path: str, tree: ast.AST) -> list[DiagnosticItem]:
+        """Detects empty function stubs (pass or ellipsis) that lack real working logic."""
+        stub_errors: list[DiagnosticItem] = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imported_names.add(alias.name)
-                    imported_names.add(alias.asname or alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    imported_names.add(alias.name)
-                    imported_names.add(alias.asname or alias.name)
-
-        errors = []
-        if "redirect(" in content and "redirect" not in imported_names:
-            errors.append(DiagnosticItem(
-                file_path=file_path, line=1, column=1,
-                message="Missing import: 'from django.shortcuts import redirect'",
-                source="import_gate",
-            ))
-        if "TaskForm" in content and "TaskForm" not in imported_names and "class TaskForm" not in content:
-            errors.append(DiagnosticItem(
-                file_path=file_path, line=1, column=1,
-                message="Missing import: 'from tasks.forms import TaskForm'",
-                source="import_gate",
-            ))
-
-        # Check commonly missing typing symbols
-        for sym in ("Dict", "List", "Optional", "Tuple", "Any", "Union"):
-            if (f"{sym}[" in content or f": {sym}" in content or f"-> {sym}" in content) and sym not in imported_names:
-                errors.append(DiagnosticItem(
-                    file_path=file_path, line=1, column=1,
-                    message=f"Missing import: 'from typing import {sym}'",
-                    source="import_gate",
-                ))
-
-        return errors
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                decorators = [
+                    d.id if isinstance(d, ast.Name) else (d.attr if isinstance(d, ast.Attribute) else "")
+                    for d in node.decorator_list
+                ]
+                if any(dec in ("abstractmethod", "overload") for dec in decorators):
+                    continue
+                body = node.body
+                if (
+                    body
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)
+                ):
+                    body = body[1:]
+                if not body:
+                    stub_errors.append(
+                        DiagnosticItem(
+                            file_path=file_path,
+                            line=node.lineno,
+                            column=node.col_offset or 1,
+                            message=f"Function '{node.name}' has no implementation. Working code required.",
+                            source="stub_gate",
+                        )
+                    )
+                elif len(body) == 1:
+                    stmt = body[0]
+                    is_pass = isinstance(stmt, ast.Pass)
+                    is_ellipsis = (
+                        isinstance(stmt, ast.Expr)
+                        and isinstance(stmt.value, ast.Constant)
+                        and stmt.value.value is Ellipsis
+                    )
+                    if is_pass or is_ellipsis:
+                        stub_errors.append(
+                            DiagnosticItem(
+                                file_path=file_path,
+                                line=node.lineno,
+                                column=node.col_offset or 1,
+                                message=f"Function '{node.name}' contains stub body ('pass' or '...'). Real working logic required.",
+                                source="stub_gate",
+                            )
+                        )
+        return stub_errors
 
     def _check_json(self, file_path: str, content: str) -> DiagnosticReport:
         """Checks JSON format."""
@@ -180,14 +171,13 @@ class CompilerGate:
             )
             return DiagnosticReport(is_valid=False, errors=[err])
         except (subprocess.SubprocessError, FileNotFoundError):
-            # Fallback to basic bracket balancing if node is not executable
-            return self._check_bracket_balance(file_path, content)
+            return check_bracket_balance(file_path, content)
         finally:
             Path(tmp_name).unlink(missing_ok=True)
 
     def _check_jsx_typescript(self, file_path: str, content: str) -> DiagnosticReport:
         """Validates bracket and tag balance for React and TypeScript."""
-        return self._check_bracket_balance(file_path, content)
+        return check_bracket_balance(file_path, content)
 
     def _check_html(self, file_path: str, content: str) -> DiagnosticReport:
         """Validates HTML markup using HTMLParser."""
@@ -210,41 +200,6 @@ class CompilerGate:
                 source="html_parser",
             )
             return DiagnosticReport(is_valid=False, errors=[err])
-
-    def _check_bracket_balance(self, file_path: str, content: str) -> DiagnosticReport:
-        """Verifies matched parenthesis, braces, and brackets."""
-        stack: list[tuple[str, int]] = []
-        matching = {")": "(", "}": "{", "]": "["}
-        lines = content.split("\n")
-
-        for line_num, line in enumerate(lines, start=1):
-            for char in line:
-                if char in "({[":
-                    stack.append((char, line_num))
-                elif char in ")}]":
-                    if not stack or stack[-1][0] != matching[char]:
-                        err = DiagnosticItem(
-                            file_path=file_path,
-                            line=line_num,
-                            column=1,
-                            message=f"Unmatched closing bracket '{char}'",
-                            source="syntax_gate",
-                        )
-                        return DiagnosticReport(is_valid=False, errors=[err])
-                    stack.pop()
-
-        if stack:
-            open_char, line_num = stack.pop()
-            err = DiagnosticItem(
-                file_path=file_path,
-                line=line_num,
-                column=1,
-                message=f"Unclosed opening bracket '{open_char}'",
-                source="syntax_gate",
-            )
-            return DiagnosticReport(is_valid=False, errors=[err])
-
-        return DiagnosticReport(is_valid=True)
 
     def ingest_lsp_diagnostics(self, raw_diagnostics: list[dict]) -> DiagnosticReport:
         """Translates external LSP diagnostics from VS Code into a DiagnosticReport."""

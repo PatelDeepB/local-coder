@@ -93,13 +93,18 @@ class AgentExecutionLoop:
 
                 # Zero-Work Guard: Prevent concluding before writing or editing any code
                 completed_count = len(session.completed_steps)
-                if completed_count == 0 and step_idx < 3:
-                    conversation_history.append(
-                        f"Step {step_idx} Action Required: You have not created or modified any files yet! "
-                        "Do NOT output a summary without applying changes. You MUST write or patch the file now using:\n"
-                        "<write_file path=\"path/to/file\">\ncomplete updated code\n</write_file>"
-                    )
-                    continue
+                if completed_count == 0:
+                    if step_idx < self.max_steps:
+                        conversation_history.append(
+                            f"Step {step_idx} Action Required: You have not created or modified any files yet! "
+                            "Do NOT output a summary without applying changes. You MUST write or patch the file now using:\n"
+                            "<write_file path=\"path/to/file\">\ncomplete updated code\n</write_file>"
+                        )
+                        continue
+                    else:
+                        session.status = TaskStatus.FAILED
+                        session.final_output = "Task stopped: No files were created or modified."
+                        break
 
                 # Progress Guard: Model prematurely stopped before completing multi-file plan
                 if completed_count <= 1 and len(session.plan_checklist) >= 3 and step_idx < 4:

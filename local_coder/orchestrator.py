@@ -165,68 +165,56 @@ class LocalCoderOrchestrator:
         self.memory_guard.assert_within_budget()
         rules = self.rules_engine.discover_rules() or ""
 
-        # Step 0: Fast Apply auto-routing for single-file precision edits
-        m_file = re.search(r"@([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)|(?:in|for|into|modify|update|edit)\s+([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)", user_goal, re.IGNORECASE)
-        target_f = (m_file.group(1) or m_file.group(2)) if m_file else None
-        if target_f and (self.root_dir / target_f).is_file():
+        # Step 0: Fast Apply auto-routing for precision edits and targeted creation
+        m_file = re.search(
+            r"@([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)|"
+            r"(?:in|for|into|modify|update|edit|create|write|add|generate|to)\s+([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)|"
+            r"\b([a-zA-Z0-9_\-]+\.(py|js|ts|jsx|tsx|html|css|json))\b",
+            user_goal,
+            re.IGNORECASE,
+        )
+        target_f = (m_file.group(1) or m_file.group(2) or m_file.group(3)) if m_file else None
+        goal_lower = user_goal.lower()
+
+        if not target_f:
+            m_s = re.search(r"\b(calculator|converter|analyzer|parser|service|helper|scraper|server|script)\b", goal_lower)
+            if m_s and any(w in goal_lower for w in ["python", "py", "function", "class", "script"]):
+                target_f = f"{m_s.group(1)}.py"
+
+        if target_f:
             fast_res = self.run_fast_apply(target_f, user_goal, output_directory)
             if fast_res.is_success:
+                step = AgentStep(1, f"Fast Apply {target_f}", "fast_apply", {"file_path": target_f}, "Applied.", True, fast_res.elapsed_seconds)
                 return AgentSessionState(
-                    session_id=str(uuid.uuid4())[:8],
-                    user_goal=user_goal,
-                    status=TaskStatus.COMPLETED,
-                    output_directory=str(self.root_dir),
-                    modified_files=[target_f],
+                    session_id=str(uuid.uuid4())[:8], user_goal=user_goal, status=TaskStatus.COMPLETED,
+                    output_directory=str(self.root_dir), modified_files=[target_f],
                     final_output=f"Fast Apply completed in {fast_res.elapsed_seconds:.2f}s:\n{fast_res.diff}",
-                    completed_steps=[
-                        AgentStep(
-                            step_number=1,
-                            thought=f"Fast Apply 1-pass edit on {target_f}",
-                            action_tool="fast_apply",
-                            action_arguments={"file_path": target_f},
-                            observation=f"Successfully applied non-destructive update to {target_f}.",
-                            is_successful=True,
-                            elapsed_seconds=fast_res.elapsed_seconds,
-                        )
-                    ],
+                    completed_steps=[step],
                 )
 
-        # Step 1: Execute synthesis engine
-        goal_lower = user_goal.lower()
-        scaffold_kws = ["create", "build", "scaffold", "react", "website", "next", "app", "application"]
-        is_scaffold = any(re.search(rf"\b{kw}\b", goal_lower) for kw in scaffold_kws)
-        if any(kw in goal_lower for kw in ["modify", "edit", "update", "patch", "refactor"]):
+        # Step 1: Detect true multi-file scaffold vs targeted coding
+        project_scaffold_patterns = [
+            r"\b(create|build|scaffold)\s+(a\s+)?(new\s+)?(project|app|application|website|fullstack|react|dashboard|frontend|backend)\b",
+            r"\b(react|nextjs|django|flask|fastapi)\s+(app|application|project|dashboard)\b",
+        ]
+        is_scaffold = any(re.search(p, goal_lower) for p in project_scaffold_patterns)
+        if any(kw in goal_lower for kw in ["function", "method", "class", "script", "test", "patch", "modify", "edit", "update"]):
             is_scaffold = False
 
         if is_scaffold:
-            session = AgentSessionState(
-                session_id=str(uuid.uuid4())[:8],
-                user_goal=user_goal,
-                status=TaskStatus.IN_PROGRESS,
-            )
-            step_idx = 0
-            start_t = time.perf_counter()
+            session = AgentSessionState(session_id=str(uuid.uuid4())[:8], user_goal=user_goal, status=TaskStatus.IN_PROGRESS)
+            step_idx, start_t = 0, time.perf_counter()
 
             def on_file(fp: str, idx: int, total: int) -> None:
                 nonlocal step_idx
                 step_idx += 1
                 session.completed_steps.append(
-                    AgentStep(
-                        step_number=step_idx,
-                        thought=f"Synthesizing manifest file {idx}/{total}: {fp}",
-                        action_tool="write_file",
-                        action_arguments={"file_path": fp},
-                        observation=f"Successfully synthesized and staged {fp} in shadow workspace.",
-                        is_successful=True,
-                        elapsed_seconds=time.perf_counter() - start_t,
-                    )
+                    AgentStep(step_idx, f"Synthesizing {fp} ({idx}/{total})", "write_file", {"file_path": fp}, "Staged.", True, time.perf_counter() - start_t)
                 )
 
             manifest = self.manifest_synthesizer.generate_manifest(user_goal)
             results = self.hierarchical_planner.synthesize_hierarchy(
-                manifest=manifest,
-                user_goal=user_goal,
-                on_file_progress=on_file,
+                manifest=manifest, user_goal=user_goal, on_file_progress=on_file,
             )
             manifest_files = [r.file_path for r in results]
             session.status = TaskStatus.COMPLETED

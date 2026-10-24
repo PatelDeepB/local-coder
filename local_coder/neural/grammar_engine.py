@@ -95,7 +95,7 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
 
     # Format 5: Markdown code block with embedded filepath comment
     m_comment_file = re.search(
-        r'```(?:[a-zA-Z0-9_-]+)?[\r\n]+(?:#|//)\s*(?:filepath:|file:|path:)?\s*([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)[\r\n](.*?)```',
+        r'```(?:[a-zA-Z0-9_-]+)?\s*[\r\n]+(?:#|//)\s*(?:filepath:|file:|path:)?\s*([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\s*[\r\n]+(.*?)```',
         clean,
         flags=re.DOTALL,
     )
@@ -103,6 +103,16 @@ def parse_tool_call_json(raw_text: str) -> tuple[str, dict[str, Any]]:
         file_path = m_comment_file.group(1).strip()
         code_content = m_comment_file.group(2).strip()
         return "write_file", {"file_path": file_path, "content": code_content}
+
+    # Format 6: Markdown code block with filename mentioned in preceding prose
+    m_code_block = re.search(r"```([a-zA-Z0-9_-]+)?\s*[\r\n]+(.*?)```", clean, flags=re.DOTALL)
+    if m_code_block:
+        lang = (m_code_block.group(1) or "").lower()
+        block_code = m_code_block.group(2).strip()
+        before_text = clean[: m_code_block.start()]
+        m_prev_file = re.search(r"\b([a-zA-Z0-9_\-]+\.(py|js|ts|jsx|tsx|html|css|json|sh))\b", before_text)
+        if m_prev_file and len(block_code) > 10:
+            return "write_file", {"file_path": m_prev_file.group(1), "content": block_code}
 
     # Pattern 1: Markdown json block
     md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, flags=re.DOTALL)

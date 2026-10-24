@@ -37,7 +37,7 @@ async def execute_task(req: TaskRequest) -> dict[str, Any]:
             orchestrator.run_coding_task,
             user_goal=req.goal,
             output_directory=req.output_directory,
-            auto_commit=False,
+            auto_commit=True,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Task execution error: {str(exc)}")
