@@ -5,6 +5,7 @@ from typing import Any
 import json
 import os
 
+from local_coder.ast_engine.smart_merger import SmartCodeMerger
 from local_coder.ast_engine.symbol_extractor import SymbolExtractor
 from local_coder.tools.base_tool import BaseAgentTool, ToolResult
 from local_coder.verifier.syntax_validator import SyntaxValidator
@@ -154,6 +155,11 @@ class WriteFileTool(BaseAgentTool):
         content = kwargs.get("content", "")
         if not rel_path:
             return ToolResult(is_success=False, output="", error_message="file_path is required.")
+
+        # Non-Destructive Merge Gate: Prevent clobbering existing features in existing files
+        existing_content = self.workspace.get_staged_content(rel_path)
+        if existing_content and existing_content.strip():
+            content = SmartCodeMerger().merge_source_code(existing_content, content, rel_path)
 
         # AST Syntax Gate: Prevent saving broken Python code
         if rel_path.endswith(".py"):

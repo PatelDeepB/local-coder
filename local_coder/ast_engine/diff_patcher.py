@@ -32,6 +32,11 @@ class PrecisionPatcher:
         norm_replace = re.sub(r"(?m)^[<>=]{5,9}.*$", "", raw_replace).strip("\r\n")
 
         if not norm_search:
+            if norm_replace:
+                sep = "\n\n" if not norm_orig.endswith("\n\n") else ""
+                modified = norm_orig.rstrip() + sep + norm_replace + "\n"
+                diff = self.generate_unified_diff(norm_orig, modified)
+                return PatchResult(is_success=True, modified_content=modified, diff_unified=diff)
             return PatchResult(
                 is_success=False,
                 modified_content=original_content,

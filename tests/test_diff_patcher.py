@@ -97,3 +97,20 @@ def test_should_recover_when_intended_replacement_in_search_and_ellipsis_in_repl
     # Assert
     assert res.is_success is True
     assert "PAUSED = 'PAUSED'" in res.modified_content
+
+
+def test_should_append_when_search_block_is_empty_and_replace_block_provided() -> None:
+    # Arrange
+    patcher = PrecisionPatcher()
+    original = "def foo():\n    return 1\n"
+    search_b = ""
+    replace_b = "def bar():\n    return 2"
+
+    # Act
+    res = patcher.apply_search_replace(original, search_b, replace_b)
+
+    # Assert
+    assert res.is_success is True
+    assert "def foo():" in res.modified_content
+    assert "def bar():" in res.modified_content
+
